@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>FOR-TOOL-001</title>
+
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+
+    <main class="shell">
+
+        <header class="app-header">
+
+            <div>
+                <p class="eyebrow">FORENSIA / HERRAMIENTA DIGITAL</p>
+
+                <h1>
+                    FOR-TOOL-001
+                </h1>
+            </div>
+
+            <p class="header-status">
+                GENERADOR DE CADENA DE CUSTODIA
+            </p>
+
+        </header>
+
+        <div class="workspace">
+
+            <section class="panel">
+
+                <h2>
+                    <span>&gt;</span> CARGANDO DATOS DE EVIDENCIA
+                </h2>
+
+                <div class="field">
+                    <label for="evidencia">
+                        Número de evidencia
+                    </label>
+
+                    <input type="text" id="evidencia" placeholder="EV-2026-001">
+                </div>
+
+                <div class="field">
+                    <label for="responsable">
+                        Responsable
+                    </label>
+
+                    <input type="text" id="responsable" placeholder="Nombre y apellido">
+                </div>
+
+                <div class="field">
+                    <label for="ubicacion">
+                        Ubicación
+                    </label>
+
+                    <input type="text" id="ubicacion" placeholder="Área, depósito o laboratorio">
+                </div>
+
+                <div class="field">
+                    <label for="estadoCustodia">
+                        Estado
+                    </label>
+
+                    <input type="text" id="estadoCustodia" placeholder="Recibido / En análisis / Archivado">
+                </div>
+
+                <div class="field">
+                    <label for="fechaRecepcion">
+                        Fecha de recepción
+                    </label>
+
+                    <input type="date" id="fechaRecepcion">
+                </div>
+
+                <div class="field">
+                    <label for="descripcion">
+                        Descripción
+                    </label>
+
+                    <input type="text" id="descripcion" placeholder="Dispositivo, soporte o archivo analizado">
+                </div>
+
+            </section>
+
+            <section class="panel">
+
+                <h2>
+                    <span>&gt;</span> GESTIÓN DE ARCHIVOS
+                </h2>
+
+                <div class="field">
+                    <label for="archivo">
+                        Archivo
+                    </label>
+
+                    <input type="file" id="archivo">
+                </div>
+
+                <button id="btnHash" class="primary-action">
+
+                    CALCULAR HASH
+
+                </button>
+
+                <div class="field">
+                    <label for="resultadoHash">
+                        Resultado SHA256
+                    </label>
+
+                    <input type="text" id="resultadoHash" readonly placeholder="Pendiente de cálculo">
+                </div>
+
+            </section>
+
+            <section class="panel status-panel">
+
+                <h2>
+                    <span>&gt;</span> ESTADO DE INTEGRIDAD
+                </h2>
+
+                <p id="estado">
+
+                    SIN VERIFICAR
+
+                </p>
+
+            </section>
+
+            <section class="panel registry-panel">
+
+                <h2>
+                    <span>&gt;</span> REGISTRO DE EVIDENCIA
+                </h2>
+
+                <div id="registro">
+
+                    AÚN NO SE GENERÓ NINGÚN REGISTRO
+
+                </div>
+
+            </section>
+
+        </div>
+
+        <!-- ACÁ -->
+
+        <section class="verification-section">
+
+            <h2>
+                > VERIFICACIÓN DE INTEGRIDAD
+            </h2>
+
+            <label>
+                Hash Original
+            </label>
+
+            <input type="text" id="hashOriginal">
+
+            <br><br>
+
+            <label>
+                Archivo a verificar
+            </label>
+
+            <input type="file" id="archivoVerificar">
+
+            <br><br>
+
+            <button id="btnVerificar" class="secondary-action">
+
+                VERIFICAR INTEGRIDAD
+
+            </button>
+
+            <p id="resultadoVerificacion">
+
+                SIN VERIFICAR
+
+            </p>
+
+            </p>
+
+            <div id="registroVerificacion">
+
+                SIN VERIFICACIONES
+
+            </div>
+
+
+
+        </section>
+
+        <div class="actions">
+
+            <button id="btnPDF" class="secondary-action">
+
+                EXPORTAR PDF
+
+            </button>
+
+        </div>
+
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="script.js"></script>
+
+</body>
+
+</html>
