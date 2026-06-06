@@ -17,3 +17,14 @@ Tecnologías:
 - JavaScript
 - Crypto API
 - jsPDF
+
+---------------------------------------------------------------------------------------------------
+
+## Conceptos Aplicados
+
+- Evidencia Digital
+- Cadena de Custodia
+- Integridad de Datos
+- Hashing Criptográfico
+- Verificación de Evidencia
+- Documentación Forense
