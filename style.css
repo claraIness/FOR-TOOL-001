@@ -151,11 +151,14 @@ input {
     width: 100%;
     min-height: 40px;
     padding: 10px 12px;
-    color: var(--text);
+    color: var(--green);
     background: #050506;
     border: 1px solid rgba(0, 255, 136, 0.36);
     border-radius: 0;
     outline: none;
+    color-scheme: dark;
+    caret-color: var(--green);
+    box-shadow: inset 0 0 18px rgba(0, 240, 131, 0.04);
 }
 
 input::placeholder {
@@ -165,6 +168,27 @@ input::placeholder {
 input:focus {
     border-color: var(--green);
     box-shadow: 0 0 0 3px var(--green-soft);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--green);
+    caret-color: var(--green);
+    box-shadow:
+        0 0 0 1000px #050506 inset,
+        0 0 0 3px var(--green-soft);
+    transition: background-color 9999s ease-in-out 0s;
+}
+
+input[type="date"] {
+    color: var(--green);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    filter: invert(66%) sepia(94%) saturate(735%) hue-rotate(100deg) brightness(103%);
+    opacity: 0.7;
 }
 
 input[type="file"] {
