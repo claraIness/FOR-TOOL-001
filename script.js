@@ -147,15 +147,69 @@ botonPDF.addEventListener("click", function () {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     const contenido = registro.innerText.trim();
+    const hashCalculado = resultadoHash.value.trim();
+    const lineaDoble = "=".repeat(72);
+    const lineaSimple = "-".repeat(72);
+    const evidencia = document.getElementById("evidencia").value.trim() || "Sin informar";
+    const responsable = document.getElementById("responsable").value.trim() || "Sin informar";
+    const ubicacion = document.getElementById("ubicacion").value.trim() || "Sin informar";
+    const estadoCustodia = document.getElementById("estadoCustodia").value.trim() || "Sin informar";
+    const fechaRecepcion = document.getElementById("fechaRecepcion").value || "Sin informar";
+    const descripcion = document.getElementById("descripcion").value.trim() || "Sin informar";
+    const archivo = document.getElementById("archivo").files[0];
+    const fechaEmision = new Date().toLocaleString();
+
+    if (!hashCalculado) {
+        alert("Primero calculá el hash para generar el registro.");
+        return;
+    }
 
     if (!contenido || contenido === "AÚN NO SE GENERÓ NINGÚN REGISTRO") {
         alert("Primero calculá el hash para generar el registro.");
         return;
     }
 
+    const lineasPDF = [
+        lineaDoble,
+        "FORENSIA // FOR-TOOL-001",
+        "GENERADOR DE CADENA DE CUSTODIA",
+        lineaDoble,
+        "",
+        "[ IDENTIFICACION DE EVIDENCIA ]",
+        lineaSimple,
+        `EXPEDIENTE          : ${evidencia}`,
+        `RESPONSABLE         : ${responsable}`,
+        `UBICACION           : ${ubicacion}`,
+        `ESTADO              : ${estadoCustodia}`,
+        `FECHA DE RECEPCION  : ${fechaRecepcion}`,
+        `FECHA DE EMISION    : ${fechaEmision}`,
+        "",
+        lineaDoble,
+        "[ DESCRIPCION ]",
+        lineaSimple,
+        descripcion,
+        "",
+        lineaDoble,
+        "[ ARCHIVO ANALIZADO ]",
+        lineaSimple,
+        `NOMBRE              : ${archivo.name}`,
+        `TIPO                : ${archivo.type || "No informado"}`,
+        `TAMANO              : ${archivo.size} bytes`,
+        "",
+        lineaDoble,
+        "[ INTEGRIDAD DIGITAL ]",
+        lineaSimple,
+        "ALGORITMO           : SHA-256",
+        `HASH                : ${hashCalculado}`,
+        "",
+        lineaDoble,
+        "FIN DEL REGISTRO // CADENA DE CUSTODIA DIGITAL",
+        lineaDoble
+    ];
+
     doc.setFont("courier", "normal");
     doc.setFontSize(10);
-    doc.text(contenido, 10, 12, { maxWidth: 190 });
+    doc.text(lineasPDF.join("\n"), 10, 12, { maxWidth: 190 });
     doc.save("FORENSIA-Informe.pdf");
 });
 
