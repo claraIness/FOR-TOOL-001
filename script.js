@@ -5,6 +5,17 @@ const botonPDF = document.getElementById("btnPDF");
 const estado = document.getElementById("estado");
 const registro = document.getElementById("registro");
 const resultadoHash = document.getElementById("resultadoHash");
+const botonCopiarHash = document.getElementById("btnCopiarHash");
+
+function actualizarEstado(mensaje, tipo) {
+    estado.textContent = mensaje;
+    estado.classList.remove(
+        "estado-pendiente",
+        "estado-correcto",
+        "estado-error"
+    );
+    estado.classList.add(`estado-${tipo}`);
+}
 
 botonHash.addEventListener("click", async function () {
     const evidencia = document.getElementById("evidencia").value.trim();
@@ -17,12 +28,13 @@ botonHash.addEventListener("click", async function () {
 
     if (!archivo) {
         alert("Debe seleccionar un archivo.");
+        actualizarEstado("ERROR: ARCHIVO NO SELECCIONADO", "error");
         return;
     }
 
     if (!window.crypto || !window.crypto.subtle) {
         alert("El navegador no permite calcular hashes en este contexto. Abrí la página desde http://localhost o HTTPS.");
-        estado.textContent = "ERROR: API CRYPTO NO DISPONIBLE";
+        actualizarEstado("ERROR: API CRYPTO NO DISPONIBLE", "error");
         return;
     }
 
@@ -40,7 +52,7 @@ botonHash.addEventListener("click", async function () {
         const tipoArchivo = archivo.type || "No informado";
 
         resultadoHash.value = hashHex;
-        estado.textContent = "HASH CALCULADO CORRECTAMENTE";
+        actualizarEstado("HASH CALCULADO CORRECTAMENTE", "correcto");
 
         registro.innerHTML = `
 <div class="cabecera">
@@ -134,8 +146,27 @@ botonHash.addEventListener("click", async function () {
     } catch (error) {
         console.error("ERROR AL CALCULAR HASH:", error);
         alert("No se pudo calcular el hash del archivo.");
-        estado.textContent = "ERROR AL CALCULAR HASH";
+        actualizarEstado("ERROR AL CALCULAR HASH", "error");
     }
+});
+
+botonCopiarHash.addEventListener("click", async function () {
+    const hash = resultadoHash.value.trim();
+
+    if (!hash) {
+        alert("Primero calculá el hash.");
+        actualizarEstado("SIN HASH PARA COPIAR", "error");
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(hash);
+    } catch (error) {
+        resultadoHash.select();
+        document.execCommand("copy");
+    }
+
+    actualizarEstado("HASH COPIADO AL PORTAPAPELES", "correcto");
 });
 
 botonPDF.addEventListener("click", function () {

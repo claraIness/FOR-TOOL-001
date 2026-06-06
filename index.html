@@ -105,11 +105,15 @@
                     <input type="file" id="archivo">
                 </div>
 
-                <button id="btnHash" class="primary-action">
+                <div class="field action-field">
+                    <span></span>
 
-                    CALCULAR HASH
+                    <button id="btnHash" class="primary-action">
 
-                </button>
+                        CALCULAR HASH
+
+                    </button>
+                </div>
 
                 <div class="field">
                     <label for="resultadoHash">
@@ -117,6 +121,16 @@
                     </label>
 
                     <input type="text" id="resultadoHash" readonly placeholder="Pendiente de cálculo">
+                </div>
+
+                <div class="field action-field">
+                    <span></span>
+
+                    <button id="btnCopiarHash" class="secondary-action hash-copy-action" type="button">
+
+                        COPIAR HASH
+
+                    </button>
                 </div>
 
             </section>
@@ -127,7 +141,7 @@
                     <span>&gt;</span> ESTADO DE INTEGRIDAD
                 </h2>
 
-                <p id="estado">
+                <p id="estado" class="estado-pendiente">
 
                     SIN VERIFICAR
 

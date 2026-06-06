@@ -226,12 +226,24 @@ button {
 }
 
 .primary-action {
-    width: 100%;
     margin: 4px 0 18px;
 }
 
 .secondary-action {
     min-width: 180px;
+}
+
+.hash-copy-action {
+    margin-top: -2px;
+}
+
+.action-field button {
+    width: 100%;
+}
+
+.action-field .primary-action,
+.action-field .hash-copy-action {
+    margin: 0;
 }
 
 button:hover {
@@ -253,14 +265,30 @@ button:hover {
     width: fit-content;
     margin: 0;
     padding: 10px 14px;
-    color: var(--green);
-    background: var(--green-soft);
-    border: 1px solid var(--line);
     border-radius: 0;
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 1.6px;
     text-shadow: 0 0 10px rgba(0, 240, 131, 0.32);
+}
+
+.estado-pendiente {
+    color: var(--violet);
+    background: rgba(155, 112, 255, 0.08);
+    border: 1px solid rgba(155, 112, 255, 0.5);
+}
+
+.estado-correcto {
+    color: var(--green);
+    background: var(--green-soft);
+    border: 1px solid var(--line);
+}
+
+.estado-error {
+    color: var(--danger);
+    background: rgba(255, 92, 122, 0.08);
+    border: 1px solid rgba(255, 92, 122, 0.55);
+    text-shadow: 0 0 10px rgba(255, 92, 122, 0.32);
 }
 
 .registry-panel {
