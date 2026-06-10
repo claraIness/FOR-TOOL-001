@@ -1,4 +1,4 @@
-console.log("FORENSIA ONLINE");
+﻿console.log("FORENSIA ONLINE");
 
 const botonHash = document.getElementById("btnHash");
 const botonPDF = document.getElementById("btnPDF");
@@ -6,16 +6,124 @@ const estado = document.getElementById("estado");
 const registro = document.getElementById("registro");
 const resultadoHash = document.getElementById("resultadoHash");
 const botonCopiarHash = document.getElementById("btnCopiarHash");
+const botonLimpiar = document.getElementById("btnLimpiar");
 
 function actualizarEstado(mensaje, tipo) {
     estado.textContent = mensaje;
     estado.classList.remove(
         "estado-pendiente",
         "estado-correcto",
+        "estado-alerta",
         "estado-error"
     );
     estado.classList.add(`estado-${tipo}`);
 }
+
+function actualizarResultadoVerificacion(mensaje, tipo) {
+    const resultadoVerificacion = document.getElementById("resultadoVerificacion");
+
+    if (!resultadoVerificacion) {
+        return;
+    }
+
+    resultadoVerificacion.textContent = mensaje;
+    resultadoVerificacion.classList.remove(
+        "estado-pendiente",
+        "estado-correcto",
+        "estado-alerta",
+        "estado-error"
+    );
+    resultadoVerificacion.classList.add(`estado-${tipo}`);
+}
+
+function marcarCampo(id, faltaDato) {
+    const campo = document.getElementById(id);
+    const fila = campo.closest(".field");
+
+    if (!fila) {
+        return;
+    }
+
+    fila.classList.toggle("field-warning", faltaDato);
+}
+
+function validarCamposMinimos() {
+    const evidencia = document.getElementById("evidencia").value.trim();
+    const responsable = document.getElementById("responsable").value.trim();
+    const archivo = document.getElementById("archivo").files[0];
+    const faltantes = [];
+
+    if (!evidencia) {
+        faltantes.push("numero de evidencia");
+    }
+
+    if (!responsable) {
+        faltantes.push("responsable");
+    }
+
+    if (!archivo) {
+        faltantes.push("archivo");
+    }
+
+    marcarCampo("evidencia", !evidencia);
+    marcarCampo("responsable", !responsable);
+    marcarCampo("archivo", !archivo);
+
+    return faltantes;
+}
+
+["evidencia", "responsable", "archivo"].forEach(function (id) {
+    const campo = document.getElementById(id);
+    const evento = id === "archivo" ? "change" : "input";
+
+    campo.addEventListener(evento, function () {
+        const tieneDato = id === "archivo"
+            ? campo.files.length > 0
+            : campo.value.trim().length > 0;
+
+        marcarCampo(id, !tieneDato);
+    });
+});
+
+botonLimpiar.addEventListener("click", function () {
+    [
+        "evidencia",
+        "responsable",
+        "ubicacion",
+        "estadoCustodia",
+        "fechaRecepcion",
+        "descripcion",
+        "archivo",
+        "resultadoHash",
+        "hashOriginal",
+        "archivoVerificar"
+    ].forEach(function (id) {
+        const campo = document.getElementById(id);
+
+        if (campo) {
+            campo.value = "";
+        }
+    });
+
+    document.querySelectorAll(".field-warning").forEach(function (fila) {
+        fila.classList.remove("field-warning");
+    });
+
+    registro.innerHTML = "AÚN NO SE GENERÓ NINGÚN REGISTRO";
+
+    const resultadoVerificacion = document.getElementById("resultadoVerificacion");
+    const registroVerificacion = document.getElementById("registroVerificacion");
+
+    if (resultadoVerificacion) {
+        actualizarResultadoVerificacion("SIN VERIFICAR", "pendiente");
+    }
+
+    if (registroVerificacion) {
+        registroVerificacion.textContent = "SIN VERIFICACIONES";
+    }
+
+    actualizarEstado("SIN VERIFICAR", "pendiente");
+});
 
 botonHash.addEventListener("click", async function () {
     const evidencia = document.getElementById("evidencia").value.trim();
@@ -25,6 +133,14 @@ botonHash.addEventListener("click", async function () {
     const fechaRecepcion = document.getElementById("fechaRecepcion").value;
     const descripcion = document.getElementById("descripcion").value.trim();
     const archivo = document.getElementById("archivo").files[0];
+    const camposFaltantes = validarCamposMinimos();
+
+    if (camposFaltantes.length > 0) {
+        actualizarEstado(
+            `DATOS MINIMOS PENDIENTES: ${camposFaltantes.join(", ").toUpperCase()}`,
+            "alerta"
+        );
+    }
 
     if (!archivo) {
         alert("Debe seleccionar un archivo.");
@@ -52,7 +168,12 @@ botonHash.addEventListener("click", async function () {
         const tipoArchivo = archivo.type || "No informado";
 
         resultadoHash.value = hashHex;
-        actualizarEstado("HASH CALCULADO CORRECTAMENTE", "correcto");
+
+        if (camposFaltantes.length > 0) {
+            actualizarEstado("HASH CALCULADO CON DATOS MINIMOS PENDIENTES", "alerta");
+        } else {
+            actualizarEstado("HASH CALCULADO CORRECTAMENTE", "correcto");
+        }
 
         registro.innerHTML = `
 <div class="cabecera">
@@ -189,6 +310,14 @@ botonPDF.addEventListener("click", function () {
     const descripcion = document.getElementById("descripcion").value.trim() || "Sin informar";
     const archivo = document.getElementById("archivo").files[0];
     const fechaEmision = new Date().toLocaleString();
+    const camposFaltantes = validarCamposMinimos();
+
+    if (camposFaltantes.length > 0) {
+        actualizarEstado(
+            `PDF CON DATOS MINIMOS PENDIENTES: ${camposFaltantes.join(", ").toUpperCase()}`,
+            "alerta"
+        );
+    }
 
     if (!hashCalculado) {
         alert("Primero calculá el hash para generar el registro.");
@@ -197,6 +326,11 @@ botonPDF.addEventListener("click", function () {
 
     if (!contenido || contenido === "AÚN NO SE GENERÓ NINGÚN REGISTRO") {
         alert("Primero calculá el hash para generar el registro.");
+        return;
+    }
+
+    if (!archivo) {
+        alert("Debe seleccionar un archivo para exportar el informe.");
         return;
     }
 
@@ -270,6 +404,22 @@ if (botonVerificar) {
                     "archivoVerificar"
                 ).files[0];
 
+            if (!hashOriginal.trim()) {
+                actualizarResultadoVerificacion(
+                    "ALERTA: HASH ORIGINAL PENDIENTE",
+                    "alerta"
+                );
+                return;
+            }
+
+            if (!archivoVerificar) {
+                actualizarResultadoVerificacion(
+                    "ALERTA: ARCHIVO A VERIFICAR PENDIENTE",
+                    "alerta"
+                );
+                return;
+            }
+
             console.log(
                 "ARCHIVO:",
                 archivoVerificar
@@ -306,10 +456,7 @@ if (botonVerificar) {
                 hashNuevo.trim()
             ) {
 
-                document.getElementById(
-                    "resultadoVerificacion"
-                ).textContent =
-                    "✓ INTEGRIDAD CONSERVADA";
+                actualizarResultadoVerificacion("INTEGRIDAD CONSERVADA", "correcto");
 
                 document.getElementById(
                     "registroVerificacion"
@@ -367,10 +514,7 @@ if (botonVerificar) {
 
             } else {
 
-                document.getElementById(
-                    "resultadoVerificacion"
-                ).textContent =
-                    "⚠ ARCHIVO MODIFICADO";
+                actualizarResultadoVerificacion("ALERTA: ARCHIVO MODIFICADO", "alerta");
 
                 document.getElementById(
                     "registroVerificacion"
@@ -448,3 +592,4 @@ const archivoVerificar =
     document.getElementById(
         "archivoVerificar"
     ).files[0];
+
