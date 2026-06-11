@@ -1,8 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date, datetime
+from html import escape
 from io import BytesIO
+from pathlib import Path
 
 import streamlit as st
 from reportlab.lib.pagesizes import A4
@@ -12,8 +15,12 @@ from database import (
     crear_tablas,
     existe_numero_evidencia,
     guardar_evidencia,
+    guardar_movimiento_custodia,
+    guardar_verificacion,
     listar_eventos,
     listar_evidencias,
+    listar_movimientos_custodia,
+    listar_verificaciones,
     obtener_evidencia,
 )
 
@@ -21,6 +28,7 @@ from database import (
 APP_NAME = "FOR-TOOL-001"
 APP_SUBTITLE = "GENERADOR DE CADENA DE CUSTODIA"
 EMPTY_REGISTRY = "AUN NO SE GENERO NINGUN REGISTRO"
+FAVICON_PATH = Path(__file__).with_name("assets") / "forensia-favicon-transparent.png"
 
 
 def aplicar_estilos() -> None:
@@ -82,6 +90,35 @@ def aplicar_estilos() -> None:
             font-size: 15px;
         }
 
+        [data-baseweb="tab-list"] {
+            gap: 8px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.28);
+        }
+
+        [data-baseweb="tab"] {
+            color: #8bb99e !important;
+            background: transparent !important;
+            font-family: Consolas, "Courier New", monospace;
+            font-weight: 700;
+            letter-spacing: 1.7px;
+        }
+
+        [data-baseweb="tab"]:hover {
+            color: #9b70ff !important;
+            background: rgba(155, 112, 255, 0.08) !important;
+        }
+
+        [data-baseweb="tab"][aria-selected="true"] {
+            color: #00f083 !important;
+            background: rgba(0, 240, 131, 0.08) !important;
+            text-shadow: 0 0 10px rgba(0, 240, 131, 0.34);
+        }
+
+        [data-baseweb="tab-highlight"] {
+            background-color: #00f083 !important;
+            box-shadow: 0 0 10px rgba(0, 240, 131, 0.55);
+        }
+
         .status-box {
             display: inline-block;
             padding: 10px 14px;
@@ -118,6 +155,38 @@ def aplicar_estilos() -> None:
             font-family: Consolas, "Courier New", monospace;
             font-size: 13px;
             line-height: 1.5;
+        }
+
+        .auth-box {
+            max-width: 560px;
+            margin: 48px auto 18px;
+            padding: 28px;
+            border: 1px solid rgba(155, 112, 255, 0.58);
+            background: rgba(155, 112, 255, 0.07);
+            text-align: center;
+        }
+
+        .auth-title {
+            color: #9b70ff;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-shadow: 0 0 12px rgba(155, 112, 255, 0.55);
+        }
+
+        .auth-detail {
+            color: #caffdf;
+            margin-top: 12px;
+            line-height: 1.6;
+        }
+
+        .user-session {
+            color: #00f083;
+            border: 1px solid rgba(0, 255, 136, 0.36);
+            background: rgba(0, 240, 131, 0.06);
+            padding: 10px 14px;
+            font-size: 12px;
+            letter-spacing: 1px;
         }
 
         label,
@@ -161,6 +230,150 @@ def aplicar_estilos() -> None:
 
 def calcular_sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def autenticacion_configurada() -> bool:
+    try:
+        auth = st.secrets["auth"]
+        microsoft = auth["microsoft"]
+        valores = [
+            auth["redirect_uri"],
+            auth["cookie_secret"],
+            microsoft["client_id"],
+            microsoft["client_secret"],
+            microsoft["server_metadata_url"],
+        ]
+    except Exception:
+        # Streamlit usa una excepcion propia cuando secrets.toml aun no existe.
+        return False
+
+    return all(
+        isinstance(valor, str)
+        and valor.strip()
+        and "REEMPLAZAR" not in valor.upper()
+        for valor in valores
+    )
+
+
+def dato_usuario(*claves: str, defecto: str = "No informado") -> str:
+    for clave in claves:
+        valor = st.user.get(clave)
+        if valor:
+            return str(valor)
+    return defecto
+
+
+def exigir_inicio_sesion() -> dict[str, str]:
+    if not autenticacion_configurada():
+        st.markdown(
+            """
+            <div class="auth-box">
+                <div class="auth-title">AUTENTICACION PENDIENTE</div>
+                <div class="auth-detail">
+                    Configura Microsoft Entra antes de acceder a las evidencias.
+                    Consulta AUTENTICACION.md para completar el registro seguro.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.code(".streamlit/secrets.toml.example -> .streamlit/secrets.toml")
+        st.stop()
+
+    if not st.user.is_logged_in:
+        st.markdown(
+            """
+            <div class="auth-box">
+                <div class="auth-title">ACCESO RESTRINGIDO</div>
+                <div class="auth-detail">
+                    Identificate con tu cuenta de Microsoft para ingresar a FORENSIA.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Iniciar sesion con Microsoft", use_container_width=True):
+            st.login("microsoft")
+        st.stop()
+
+    usuario = {
+        "nombre": dato_usuario("name", "preferred_username", "email"),
+        "email": dato_usuario("email", "preferred_username"),
+        "id": dato_usuario("sub", "oid"),
+    }
+    col_usuario, col_salida = st.columns([4, 1])
+    with col_usuario:
+        nombre_seguro = escape(usuario["nombre"])
+        email_seguro = escape(usuario["email"])
+        st.markdown(
+            (
+                '<div class="user-session">SESION ACTIVA // '
+                f"{nombre_seguro} // {email_seguro}</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+    with col_salida:
+        if st.button("Cerrar sesion", use_container_width=True):
+            st.logout()
+    return usuario
+
+
+def crear_firma_hash(
+    *,
+    evidencia: str,
+    responsable: str,
+    ubicacion: str,
+    estado_custodia: str,
+    fecha_recepcion: date | None,
+    descripcion: str,
+    archivo_nombre: str,
+    archivo_tipo: str,
+    archivo_bytes: bytes,
+) -> str:
+    contexto = {
+        "evidencia": evidencia.strip(),
+        "responsable": responsable.strip(),
+        "ubicacion": ubicacion.strip(),
+        "estado_custodia": estado_custodia.strip(),
+        "fecha_recepcion": fecha_recepcion.isoformat() if fecha_recepcion else "",
+        "descripcion": descripcion.strip(),
+        "archivo_nombre": archivo_nombre,
+        "archivo_tipo": archivo_tipo,
+        "archivo_tamano": len(archivo_bytes),
+        "hash_sha256": calcular_sha256(archivo_bytes),
+    }
+    serializado = json.dumps(contexto, ensure_ascii=True, sort_keys=True)
+    return calcular_sha256(serializado.encode("utf-8"))
+
+
+def hash_esta_vigente(
+    *,
+    evidencia: str,
+    responsable: str,
+    ubicacion: str,
+    estado_custodia: str,
+    fecha_recepcion: date | None,
+    descripcion: str,
+    archivo_nombre: str,
+    archivo_tipo: str,
+    archivo_bytes: bytes | None,
+) -> bool:
+    if not st.session_state.hash_sha256 or not st.session_state.firma_hash:
+        return False
+    if archivo_bytes is None:
+        return False
+    firma_actual = crear_firma_hash(
+        evidencia=evidencia,
+        responsable=responsable,
+        ubicacion=ubicacion,
+        estado_custodia=estado_custodia,
+        fecha_recepcion=fecha_recepcion,
+        descripcion=descripcion,
+        archivo_nombre=archivo_nombre,
+        archivo_tipo=archivo_tipo,
+        archivo_bytes=archivo_bytes,
+    )
+    return firma_actual == st.session_state.firma_hash
 
 
 def estado_html(texto: str, tipo: str) -> None:
@@ -297,6 +510,7 @@ def limpiar_estado() -> None:
 
     st.session_state.fecha_recepcion = date.today()
     st.session_state.hash_sha256 = ""
+    st.session_state.firma_hash = ""
     st.session_state.registro = EMPTY_REGISTRY
     st.session_state.archivo_nombre = ""
     st.session_state.archivo_tipo = ""
@@ -319,6 +533,7 @@ def inicializar_estado() -> None:
         "descripcion": "",
         "hash_original": "",
         "hash_sha256": "",
+        "firma_hash": "",
         "registro": EMPTY_REGISTRY,
         "archivo_nombre": "",
         "archivo_tipo": "",
@@ -349,14 +564,25 @@ def guardar_evidencia_actual(
     archivo_nombre: str,
     archivo_tipo: str,
     archivo_tamano: int,
+    hash_vigente: bool,
 ) -> int | None:
     if not st.session_state.hash_sha256 or st.session_state.registro == EMPTY_REGISTRY:
         st.session_state.estado_texto = "ALERTA: PRIMERO CALCULA EL HASH"
         st.session_state.estado_tipo = "alerta"
         return None
 
+    if not hash_vigente:
+        st.session_state.estado_texto = "ALERTA: DATOS O ARCHIVO CAMBIARON; RECALCULA EL HASH"
+        st.session_state.estado_tipo = "alerta"
+        return None
+
     if not evidencia.strip() or not responsable.strip():
         st.session_state.estado_texto = "ALERTA: FALTAN DATOS MINIMOS PARA GUARDAR"
+        st.session_state.estado_tipo = "alerta"
+        return None
+
+    if fecha_recepcion and fecha_recepcion > date.today():
+        st.session_state.estado_texto = "ALERTA: LA FECHA DE RECEPCION NO PUEDE SER FUTURA"
         st.session_state.estado_tipo = "alerta"
         return None
 
@@ -385,9 +611,7 @@ def guardar_evidencia_actual(
 
 
 def main() -> None:
-    st.set_page_config(page_title=APP_NAME, page_icon="FORENSIA", layout="wide")
-    crear_tablas()
-    inicializar_estado()
+    st.set_page_config(page_title=APP_NAME, page_icon=str(FAVICON_PATH), layout="wide")
     aplicar_estilos()
 
     st.markdown(
@@ -401,43 +625,199 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    col_datos, col_archivo = st.columns(2)
+    exigir_inicio_sesion()
+    crear_tablas()
+    inicializar_estado()
 
-    with col_datos:
-        st.markdown('<div class="section-title">&gt; CARGANDO DATOS DE EVIDENCIA</div>', unsafe_allow_html=True)
-        evidencia = st.text_input("Numero de evidencia", key="evidencia", placeholder="EV-2026-001")
-        responsable = st.text_input("Responsable", key="responsable", placeholder="Nombre y apellido")
-        ubicacion = st.text_input("Ubicacion", key="ubicacion", placeholder="Area, deposito o laboratorio")
-        estado_custodia = st.text_input("Estado", key="estado_custodia", placeholder="Recibido / En analisis / Archivado")
-        fecha_recepcion = st.date_input("Fecha de recepcion", key="fecha_recepcion")
-        descripcion = st.text_input("Descripcion", key="descripcion", placeholder="Dispositivo, soporte o archivo analizado")
+    tab_registrar, tab_verificar, tab_historial = st.tabs(
+        ["REGISTRAR", "VERIFICAR", "HISTORIAL"]
+    )
 
-    with col_archivo:
-        st.markdown('<div class="section-title">&gt; GESTION DE ARCHIVOS</div>', unsafe_allow_html=True)
-        archivo = st.file_uploader(
-            "Archivo",
-            key=f"archivo_{st.session_state.uploader_version}",
+    with tab_registrar:
+        col_datos, col_archivo = st.columns(2)
+
+        with col_datos:
+            st.markdown('<div class="section-title">&gt; CARGANDO DATOS DE EVIDENCIA</div>', unsafe_allow_html=True)
+            evidencia = st.text_input("Numero de evidencia", key="evidencia", placeholder="EV-2026-001")
+            responsable = st.text_input("Responsable", key="responsable", placeholder="Nombre y apellido")
+            ubicacion = st.text_input("Ubicacion", key="ubicacion", placeholder="Area, deposito o laboratorio")
+            estado_custodia = st.text_input("Estado", key="estado_custodia", placeholder="Recibido / En analisis / Archivado")
+            fecha_recepcion = st.date_input(
+                "Fecha de recepcion",
+                key="fecha_recepcion",
+                max_value=date.today(),
+            )
+            descripcion = st.text_input("Descripcion", key="descripcion", placeholder="Dispositivo, soporte o archivo analizado")
+
+        with col_archivo:
+            st.markdown('<div class="section-title">&gt; GESTION DE ARCHIVOS</div>', unsafe_allow_html=True)
+            archivo = st.file_uploader(
+                "Archivo",
+                key=f"archivo_{st.session_state.uploader_version}",
+            )
+
+            if st.button("Calcular hash", use_container_width=True):
+                archivo_bytes = archivo.getvalue() if archivo else None
+                faltantes = campos_minimos_faltantes(evidencia, responsable, archivo_bytes)
+
+                if faltantes:
+                    st.session_state.estado_texto = "DATOS MINIMOS PENDIENTES: " + ", ".join(faltantes)
+                    st.session_state.estado_tipo = "alerta"
+
+                if archivo_bytes is None:
+                    st.session_state.estado_texto = "ERROR: ARCHIVO NO SELECCIONADO"
+                    st.session_state.estado_tipo = "alerta"
+                else:
+                    hash_sha256 = calcular_sha256(archivo_bytes)
+                    st.session_state.hash_sha256 = hash_sha256
+                    st.session_state.archivo_nombre = archivo.name
+                    st.session_state.archivo_tipo = archivo.type or "No informado"
+                    st.session_state.archivo_tamano = len(archivo_bytes)
+                    st.session_state.firma_hash = crear_firma_hash(
+                        evidencia=evidencia,
+                        responsable=responsable,
+                        ubicacion=ubicacion,
+                        estado_custodia=estado_custodia,
+                        fecha_recepcion=fecha_recepcion,
+                        descripcion=descripcion,
+                        archivo_nombre=archivo.name,
+                        archivo_tipo=archivo.type or "No informado",
+                        archivo_bytes=archivo_bytes,
+                    )
+                    st.session_state.ultima_evidencia_id = None
+                    st.session_state.registro = armar_registro(
+                        evidencia=evidencia,
+                        responsable=responsable,
+                        ubicacion=ubicacion,
+                        estado_custodia=estado_custodia,
+                        fecha_recepcion=fecha_recepcion,
+                        descripcion=descripcion,
+                        archivo_nombre=st.session_state.archivo_nombre,
+                        archivo_tipo=st.session_state.archivo_tipo,
+                        archivo_tamano=st.session_state.archivo_tamano,
+                        hash_sha256=hash_sha256,
+                    )
+
+                    if faltantes:
+                        st.session_state.estado_texto = "HASH CALCULADO CON DATOS MINIMOS PENDIENTES"
+                        st.session_state.estado_tipo = "alerta"
+                    else:
+                        st.session_state.estado_texto = "HASH CALCULADO CORRECTAMENTE"
+                        st.session_state.estado_tipo = "correcto"
+
+            st.text_input(
+                "Resultado SHA256",
+                value=st.session_state.hash_sha256,
+                placeholder="Pendiente de calculo",
+                disabled=True,
+            )
+
+            if st.session_state.hash_sha256:
+                st.code(st.session_state.hash_sha256, language=None)
+
+        archivo_actual_bytes = archivo.getvalue() if archivo else None
+        hash_vigente = hash_esta_vigente(
+            evidencia=evidencia,
+            responsable=responsable,
+            ubicacion=ubicacion,
+            estado_custodia=estado_custodia,
+            fecha_recepcion=fecha_recepcion,
+            descripcion=descripcion,
+            archivo_nombre=archivo.name if archivo else "",
+            archivo_tipo=(archivo.type or "No informado") if archivo else "",
+            archivo_bytes=archivo_actual_bytes,
+        )
+        if st.session_state.hash_sha256 and not hash_vigente:
+            st.session_state.estado_texto = "HASH OBSOLETO: CAMBIARON LOS DATOS O EL ARCHIVO"
+            st.session_state.estado_tipo = "alerta"
+        elif hash_vigente and st.session_state.estado_texto.startswith("HASH OBSOLETO"):
+            st.session_state.estado_texto = "HASH VIGENTE"
+            st.session_state.estado_tipo = "correcto"
+
+        st.markdown('<div class="section-title">&gt; ESTADO DE INTEGRIDAD</div>', unsafe_allow_html=True)
+        estado_html(st.session_state.estado_texto, st.session_state.estado_tipo)
+
+        st.markdown('<div class="section-title">&gt; REGISTRO DE EVIDENCIA</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="terminal-box">{st.session_state.registro}</div>',
+            unsafe_allow_html=True,
         )
 
-        if st.button("Calcular hash", use_container_width=True):
-            archivo_bytes = archivo.getvalue() if archivo else None
-            faltantes = campos_minimos_faltantes(evidencia, responsable, archivo_bytes)
 
-            if faltantes:
-                st.session_state.estado_texto = "DATOS MINIMOS PENDIENTES: " + ", ".join(faltantes)
-                st.session_state.estado_tipo = "alerta"
+    with tab_verificar:
+        st.markdown('<div class="section-title">&gt; VERIFICACION DE INTEGRIDAD</div>', unsafe_allow_html=True)
+        evidencias_para_verificar = listar_evidencias()
+        opciones_verificacion = {
+            f"{item['numero_evidencia']} // {item['archivo_nombre']}": item["id"]
+            for item in evidencias_para_verificar
+        }
+        seleccion_verificacion = st.selectbox(
+            "Evidencia registrada",
+            options=list(opciones_verificacion.keys()),
+            index=None,
+            placeholder="Seleccionar evidencia",
+        )
+        evidencia_verificacion = (
+            obtener_evidencia(opciones_verificacion[seleccion_verificacion])
+            if seleccion_verificacion
+            else None
+        )
+        hash_original = evidencia_verificacion["hash_sha256"] if evidencia_verificacion else ""
+        st.text_input("Hash original", value=hash_original, disabled=True)
+        archivo_verificar = st.file_uploader(
+            "Archivo a verificar",
+            key=f"archivo_verificar_{st.session_state.uploader_version}",
+        )
 
-            if archivo_bytes is None:
-                st.session_state.estado_texto = "ERROR: ARCHIVO NO SELECCIONADO"
-                st.session_state.estado_tipo = "alerta"
+        if st.button("Verificar integridad", use_container_width=True):
+            if not hash_original.strip():
+                st.session_state.verificacion_texto = "ALERTA: HASH ORIGINAL PENDIENTE"
+                st.session_state.verificacion_tipo = "alerta"
+            elif archivo_verificar is None:
+                st.session_state.verificacion_texto = "ALERTA: ARCHIVO A VERIFICAR PENDIENTE"
+                st.session_state.verificacion_tipo = "alerta"
             else:
-                hash_sha256 = calcular_sha256(archivo_bytes)
-                st.session_state.hash_sha256 = hash_sha256
-                st.session_state.archivo_nombre = archivo.name
-                st.session_state.archivo_tipo = archivo.type or "No informado"
-                st.session_state.archivo_tamano = len(archivo_bytes)
-                st.session_state.ultima_evidencia_id = None
-                st.session_state.registro = armar_registro(
+                hash_nuevo = calcular_sha256(archivo_verificar.getvalue())
+                if hash_original.strip().lower() == hash_nuevo.lower():
+                    st.session_state.verificacion_texto = "INTEGRIDAD CONSERVADA"
+                    st.session_state.verificacion_tipo = "correcto"
+                    resultado = "INTEGRIDAD CONSERVADA"
+                else:
+                    st.session_state.verificacion_texto = "ALERTA: ARCHIVO MODIFICADO"
+                    st.session_state.verificacion_tipo = "alerta"
+                    resultado = "ARCHIVO MODIFICADO"
+
+                st.session_state.registro_verificacion = "\n".join(
+                    [
+                        "[ VERIFICACION DE INTEGRIDAD ]",
+                        f"HASH ESPERADO : {hash_original.strip()}",
+                        f"HASH OBTENIDO : {hash_nuevo}",
+                        f"RESULTADO     : {resultado}",
+                    ]
+                )
+                verificacion_id = guardar_verificacion(
+                    evidencia_id=evidencia_verificacion["id"],
+                    hash_esperado=hash_original.strip(),
+                    hash_obtenido=hash_nuevo,
+                    resultado=resultado,
+                )
+                st.session_state.verificacion_texto += f" // REGISTRO {verificacion_id}"
+
+        estado_html(st.session_state.verificacion_texto, st.session_state.verificacion_tipo)
+        st.markdown(
+            f'<div class="terminal-box">{st.session_state.registro_verificacion}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+    with tab_registrar:
+        col_limpiar, col_guardar, col_pdf = st.columns(3)
+        with col_limpiar:
+            st.button("Limpiar formulario", use_container_width=True, on_click=limpiar_estado)
+
+        with col_guardar:
+            if st.button("Guardar evidencia", use_container_width=True):
+                guardar_evidencia_actual(
                     evidencia=evidencia,
                     responsable=responsable,
                     ubicacion=ubicacion,
@@ -447,194 +827,192 @@ def main() -> None:
                     archivo_nombre=st.session_state.archivo_nombre,
                     archivo_tipo=st.session_state.archivo_tipo,
                     archivo_tamano=st.session_state.archivo_tamano,
-                    hash_sha256=hash_sha256,
+                    hash_vigente=hash_vigente,
                 )
 
-                if faltantes:
-                    st.session_state.estado_texto = "HASH CALCULADO CON DATOS MINIMOS PENDIENTES"
-                    st.session_state.estado_tipo = "alerta"
-                else:
-                    st.session_state.estado_texto = "HASH CALCULADO CORRECTAMENTE"
-                    st.session_state.estado_tipo = "correcto"
-
-        st.text_input(
-            "Resultado SHA256",
-            value=st.session_state.hash_sha256,
-            placeholder="Pendiente de calculo",
-            disabled=True,
-        )
-
-        if st.session_state.hash_sha256:
-            st.code(st.session_state.hash_sha256, language=None)
-
-    st.markdown('<div class="section-title">&gt; ESTADO DE INTEGRIDAD</div>', unsafe_allow_html=True)
-    estado_html(st.session_state.estado_texto, st.session_state.estado_tipo)
-
-    st.markdown('<div class="section-title">&gt; REGISTRO DE EVIDENCIA</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="terminal-box">{st.session_state.registro}</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown('<div class="section-title">&gt; VERIFICACION DE INTEGRIDAD</div>', unsafe_allow_html=True)
-    hash_original = st.text_input("Hash original", key="hash_original")
-    archivo_verificar = st.file_uploader(
-        "Archivo a verificar",
-        key=f"archivo_verificar_{st.session_state.uploader_version}",
-    )
-
-    if st.button("Verificar integridad", use_container_width=True):
-        if not hash_original.strip():
-            st.session_state.verificacion_texto = "ALERTA: HASH ORIGINAL PENDIENTE"
-            st.session_state.verificacion_tipo = "alerta"
-        elif archivo_verificar is None:
-            st.session_state.verificacion_texto = "ALERTA: ARCHIVO A VERIFICAR PENDIENTE"
-            st.session_state.verificacion_tipo = "alerta"
-        else:
-            hash_nuevo = calcular_sha256(archivo_verificar.getvalue())
-            if hash_original.strip().lower() == hash_nuevo.lower():
-                st.session_state.verificacion_texto = "INTEGRIDAD CONSERVADA"
-                st.session_state.verificacion_tipo = "correcto"
-                resultado = "INTEGRIDAD CONSERVADA"
+        with col_pdf:
+            if hash_vigente and st.session_state.registro != EMPTY_REGISTRY:
+                st.download_button(
+                    "Exportar PDF",
+                    data=generar_pdf(st.session_state.registro),
+                    file_name="FORENSIA-Informe.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
             else:
-                st.session_state.verificacion_texto = "ALERTA: ARCHIVO MODIFICADO"
-                st.session_state.verificacion_tipo = "alerta"
-                resultado = "ARCHIVO MODIFICADO"
+                st.button("Exportar PDF", use_container_width=True, disabled=True)
 
-            st.session_state.registro_verificacion = "\n".join(
-                [
-                    "[ VERIFICACION DE INTEGRIDAD ]",
-                    f"HASH ESPERADO : {hash_original.strip()}",
-                    f"HASH OBTENIDO : {hash_nuevo}",
-                    f"RESULTADO     : {resultado}",
-                ]
-            )
 
-    estado_html(st.session_state.verificacion_texto, st.session_state.verificacion_tipo)
-    st.markdown(
-        f'<div class="terminal-box">{st.session_state.registro_verificacion}</div>',
-        unsafe_allow_html=True,
-    )
+    with tab_historial:
+        st.markdown('<div class="section-title">&gt; HISTORIAL SQLITE</div>', unsafe_allow_html=True)
+        evidencias_guardadas = listar_evidencias()
 
-    col_limpiar, col_guardar, col_pdf = st.columns(3)
-    with col_limpiar:
-        st.button("Limpiar formulario", use_container_width=True, on_click=limpiar_estado)
-
-    with col_guardar:
-        if st.button("Guardar evidencia", use_container_width=True):
-            guardar_evidencia_actual(
-                evidencia=evidencia,
-                responsable=responsable,
-                ubicacion=ubicacion,
-                estado_custodia=estado_custodia,
-                fecha_recepcion=fecha_recepcion,
-                descripcion=descripcion,
-                archivo_nombre=st.session_state.archivo_nombre,
-                archivo_tipo=st.session_state.archivo_tipo,
-                archivo_tamano=st.session_state.archivo_tamano,
-            )
-
-    with col_pdf:
-        if st.session_state.hash_sha256 and st.session_state.registro != EMPTY_REGISTRY:
-            st.download_button(
-                "Exportar PDF",
-                data=generar_pdf(st.session_state.registro),
-                file_name="FORENSIA-Informe.pdf",
-                mime="application/pdf",
+        if evidencias_guardadas:
+            evidencias_tabla = [
+                {
+                    **item,
+                    "hash_sha256": f"{item['hash_sha256'][:12]}...{item['hash_sha256'][-8:]}",
+                }
+                for item in evidencias_guardadas
+            ]
+            st.dataframe(
+                evidencias_tabla,
                 use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "id": "ID",
+                    "numero_evidencia": "EVIDENCIA",
+                    "responsable": "RESPONSABLE",
+                    "estado_custodia": "ESTADO",
+                    "archivo_nombre": "ARCHIVO",
+                    "hash_sha256": "SHA256",
+                    "creado_en": "REGISTRADO",
+                },
             )
+
+            opciones = {
+                f"{item['id']} // {item['numero_evidencia']} // {item['archivo_nombre']}": item["id"]
+                for item in evidencias_guardadas
+            }
+            seleccion = st.selectbox(
+                "Seleccionar evidencia para ver detalle",
+                options=list(opciones.keys()),
+            )
+            evidencia_detalle = obtener_evidencia(opciones[seleccion])
+
+            if evidencia_detalle:
+                st.markdown('<div class="section-title">&gt; DETALLE DE EVIDENCIA</div>', unsafe_allow_html=True)
+                col_meta, col_hash = st.columns(2)
+
+                with col_meta:
+                    st.markdown(
+                        "\n".join(
+                            [
+                                '<div class="terminal-box">',
+                                f"ID                : {evidencia_detalle['id']}",
+                                f"EVIDENCIA         : {evidencia_detalle['numero_evidencia']}",
+                                f"RESPONSABLE       : {evidencia_detalle['responsable']}",
+                                f"UBICACION         : {evidencia_detalle['ubicacion'] or 'Sin informar'}",
+                                f"ESTADO            : {evidencia_detalle['estado_custodia'] or 'Sin informar'}",
+                                f"RECEPCION         : {evidencia_detalle['fecha_recepcion'] or 'Sin informar'}",
+                                f"REGISTRADO        : {evidencia_detalle['creado_en']}",
+                                "</div>",
+                            ]
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                with col_hash:
+                    st.markdown(
+                        "\n".join(
+                            [
+                                '<div class="terminal-box">',
+                                f"ARCHIVO           : {evidencia_detalle['archivo_nombre']}",
+                                f"TIPO              : {evidencia_detalle['archivo_tipo'] or 'No informado'}",
+                                f"TAMANO            : {evidencia_detalle['archivo_tamano']} bytes",
+                                f"SHA256            : {evidencia_detalle['hash_sha256']}",
+                                "</div>",
+                            ]
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                st.markdown(
+                    f'<div class="terminal-box">{evidencia_detalle["registro"]}</div>',
+                    unsafe_allow_html=True,
+                )
+
+                eventos = listar_eventos(evidencia_detalle["id"])
+                if eventos:
+                    st.markdown('<div class="section-title">&gt; EVENTOS DE CUSTODIA</div>', unsafe_allow_html=True)
+                    st.dataframe(
+                        eventos,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "tipo": "TIPO",
+                            "detalle": "DETALLE",
+                            "creado_en": "FECHA",
+                        },
+                    )
+
+                verificaciones = listar_verificaciones(evidencia_detalle["id"])
+                if verificaciones:
+                    st.markdown('<div class="section-title">&gt; VERIFICACIONES REGISTRADAS</div>', unsafe_allow_html=True)
+                    st.dataframe(
+                        verificaciones,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "hash_esperado": "HASH ESPERADO",
+                            "hash_obtenido": "HASH OBTENIDO",
+                            "resultado": "RESULTADO",
+                            "creado_en": "FECHA",
+                        },
+                    )
+
+                movimientos = listar_movimientos_custodia(evidencia_detalle["id"])
+                if movimientos:
+                    st.markdown('<div class="section-title">&gt; HISTORIAL DE CUSTODIA</div>', unsafe_allow_html=True)
+                    st.dataframe(
+                        movimientos,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "responsable_anterior": "RESPONSABLE ANTERIOR",
+                            "responsable_nuevo": "RESPONSABLE NUEVO",
+                            "ubicacion_anterior": "UBICACION ANTERIOR",
+                            "ubicacion_nueva": "UBICACION NUEVA",
+                            "estado_anterior": "ESTADO ANTERIOR",
+                            "estado_nuevo": "ESTADO NUEVO",
+                            "motivo": "MOTIVO",
+                            "creado_en": "FECHA",
+                        },
+                    )
+
+                st.markdown('<div class="section-title">&gt; REGISTRAR MOVIMIENTO DE CUSTODIA</div>', unsafe_allow_html=True)
+                with st.form(f"custodia_{evidencia_detalle['id']}"):
+                    responsable_nuevo = st.text_input(
+                        "Nuevo responsable",
+                        value=evidencia_detalle["responsable"],
+                    )
+                    ubicacion_nueva = st.text_input(
+                        "Nueva ubicacion",
+                        value=evidencia_detalle["ubicacion"] or "",
+                    )
+                    estado_nuevo = st.text_input(
+                        "Nuevo estado",
+                        value=evidencia_detalle["estado_custodia"] or "",
+                    )
+                    motivo = st.text_area("Motivo del movimiento")
+                    registrar_movimiento = st.form_submit_button(
+                        "Registrar movimiento",
+                        use_container_width=True,
+                    )
+
+                if registrar_movimiento:
+                    if not responsable_nuevo.strip() or not motivo.strip():
+                        st.error("El nuevo responsable y el motivo son obligatorios.")
+                    elif (
+                        responsable_nuevo.strip() == evidencia_detalle["responsable"]
+                        and ubicacion_nueva.strip() == (evidencia_detalle["ubicacion"] or "")
+                        and estado_nuevo.strip() == (evidencia_detalle["estado_custodia"] or "")
+                    ):
+                        st.error("Debes modificar el responsable, la ubicacion o el estado.")
+                    else:
+                        guardar_movimiento_custodia(
+                            evidencia_id=evidencia_detalle["id"],
+                            responsable_nuevo=responsable_nuevo.strip(),
+                            ubicacion_nueva=ubicacion_nueva.strip(),
+                            estado_nuevo=estado_nuevo.strip(),
+                            motivo=motivo.strip(),
+                        )
+                        st.rerun()
         else:
-            st.button("Exportar PDF", use_container_width=True, disabled=True)
-
-    st.markdown('<div class="section-title">&gt; HISTORIAL SQLITE</div>', unsafe_allow_html=True)
-    evidencias_guardadas = listar_evidencias()
-
-    if evidencias_guardadas:
-        st.dataframe(
-            evidencias_guardadas,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "id": "ID",
-                "numero_evidencia": "EVIDENCIA",
-                "responsable": "RESPONSABLE",
-                "estado_custodia": "ESTADO",
-                "archivo_nombre": "ARCHIVO",
-                "hash_sha256": "SHA256",
-                "creado_en": "REGISTRADO",
-            },
-        )
-
-        opciones = {
-            f"{item['id']} // {item['numero_evidencia']} // {item['archivo_nombre']}": item["id"]
-            for item in evidencias_guardadas
-        }
-        seleccion = st.selectbox(
-            "Seleccionar evidencia para ver detalle",
-            options=list(opciones.keys()),
-        )
-        evidencia_detalle = obtener_evidencia(opciones[seleccion])
-
-        if evidencia_detalle:
-            st.markdown('<div class="section-title">&gt; DETALLE DE EVIDENCIA</div>', unsafe_allow_html=True)
-            col_meta, col_hash = st.columns(2)
-
-            with col_meta:
-                st.markdown(
-                    "\n".join(
-                        [
-                            '<div class="terminal-box">',
-                            f"ID                : {evidencia_detalle['id']}",
-                            f"EVIDENCIA         : {evidencia_detalle['numero_evidencia']}",
-                            f"RESPONSABLE       : {evidencia_detalle['responsable']}",
-                            f"UBICACION         : {evidencia_detalle['ubicacion'] or 'Sin informar'}",
-                            f"ESTADO            : {evidencia_detalle['estado_custodia'] or 'Sin informar'}",
-                            f"RECEPCION         : {evidencia_detalle['fecha_recepcion'] or 'Sin informar'}",
-                            f"REGISTRADO        : {evidencia_detalle['creado_en']}",
-                            "</div>",
-                        ]
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-            with col_hash:
-                st.markdown(
-                    "\n".join(
-                        [
-                            '<div class="terminal-box">',
-                            f"ARCHIVO           : {evidencia_detalle['archivo_nombre']}",
-                            f"TIPO              : {evidencia_detalle['archivo_tipo'] or 'No informado'}",
-                            f"TAMANO            : {evidencia_detalle['archivo_tamano']} bytes",
-                            f"SHA256            : {evidencia_detalle['hash_sha256']}",
-                            "</div>",
-                        ]
-                    ),
-                    unsafe_allow_html=True,
-                )
-
             st.markdown(
-                f'<div class="terminal-box">{evidencia_detalle["registro"]}</div>',
+                '<div class="terminal-box">SIN EVIDENCIAS GUARDADAS</div>',
                 unsafe_allow_html=True,
             )
-
-            eventos = listar_eventos(evidencia_detalle["id"])
-            if eventos:
-                st.markdown('<div class="section-title">&gt; EVENTOS DE CUSTODIA</div>', unsafe_allow_html=True)
-                st.dataframe(
-                    eventos,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "tipo": "TIPO",
-                        "detalle": "DETALLE",
-                        "creado_en": "FECHA",
-                    },
-                )
-    else:
-        st.markdown(
-            '<div class="terminal-box">SIN EVIDENCIAS GUARDADAS</div>',
-            unsafe_allow_html=True,
-        )
 
 
 if __name__ == "__main__":

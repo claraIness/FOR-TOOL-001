@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 DB_PATH = Path(__file__).with_name("forensia.db")
 
 
-def conectar() -> sqlite3.Connection:
+@contextmanager
+def conectar() -> Iterator[sqlite3.Connection]:
     conexion = sqlite3.connect(DB_PATH)
     conexion.row_factory = sqlite3.Row
-    return conexion
+    conexion.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conexion
+        conexion.commit()
+    except Exception:
+        conexion.rollback()
+        raise
+    finally:
+        conexion.close()
 
 
 def crear_tablas() -> None:
@@ -55,6 +65,23 @@ def crear_tablas() -> None:
                 evidencia_id INTEGER,
                 tipo TEXT NOT NULL,
                 detalle TEXT NOT NULL,
+                creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (evidencia_id) REFERENCES evidencias(id)
+            )
+            """
+        )
+        conexion.execute(
+            """
+            CREATE TABLE IF NOT EXISTS movimientos_custodia (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                evidencia_id INTEGER NOT NULL,
+                responsable_anterior TEXT,
+                responsable_nuevo TEXT NOT NULL,
+                ubicacion_anterior TEXT,
+                ubicacion_nueva TEXT,
+                estado_anterior TEXT,
+                estado_nuevo TEXT,
+                motivo TEXT NOT NULL,
                 creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (evidencia_id) REFERENCES evidencias(id)
             )
@@ -209,6 +236,125 @@ def guardar_verificacion(
             ),
         )
         return verificacion_id
+
+
+def listar_verificaciones(evidencia_id: int) -> list[dict[str, Any]]:
+    with conectar() as conexion:
+        filas = conexion.execute(
+            """
+            SELECT hash_esperado, hash_obtenido, resultado, creado_en
+            FROM verificaciones
+            WHERE evidencia_id = ?
+            ORDER BY creado_en DESC, id DESC
+            """,
+            (evidencia_id,),
+        ).fetchall()
+    return [dict(fila) for fila in filas]
+
+
+def guardar_movimiento_custodia(
+    *,
+    evidencia_id: int,
+    responsable_nuevo: str,
+    ubicacion_nueva: str,
+    estado_nuevo: str,
+    motivo: str,
+) -> int:
+    with conectar() as conexion:
+        evidencia = conexion.execute(
+            """
+            SELECT responsable, ubicacion, estado_custodia
+            FROM evidencias
+            WHERE id = ?
+            """,
+            (evidencia_id,),
+        ).fetchone()
+        if evidencia is None:
+            raise ValueError("La evidencia seleccionada no existe.")
+
+        valores_actuales = (
+            evidencia["responsable"] or "",
+            evidencia["ubicacion"] or "",
+            evidencia["estado_custodia"] or "",
+        )
+        valores_nuevos = (
+            responsable_nuevo.strip(),
+            ubicacion_nueva.strip(),
+            estado_nuevo.strip(),
+        )
+        if valores_actuales == valores_nuevos:
+            raise ValueError("El movimiento no contiene cambios de custodia.")
+
+        cursor = conexion.execute(
+            """
+            INSERT INTO movimientos_custodia (
+                evidencia_id,
+                responsable_anterior,
+                responsable_nuevo,
+                ubicacion_anterior,
+                ubicacion_nueva,
+                estado_anterior,
+                estado_nuevo,
+                motivo
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                evidencia_id,
+                evidencia["responsable"],
+                responsable_nuevo,
+                evidencia["ubicacion"],
+                ubicacion_nueva,
+                evidencia["estado_custodia"],
+                estado_nuevo,
+                motivo,
+            ),
+        )
+        conexion.execute(
+            """
+            UPDATE evidencias
+            SET responsable = ?, ubicacion = ?, estado_custodia = ?
+            WHERE id = ?
+            """,
+            (responsable_nuevo, ubicacion_nueva, estado_nuevo, evidencia_id),
+        )
+        conexion.execute(
+            """
+            INSERT INTO eventos (evidencia_id, tipo, detalle)
+            VALUES (?, ?, ?)
+            """,
+            (
+                evidencia_id,
+                "CUSTODIA",
+                (
+                    f"Custodia transferida de {evidencia['responsable']} a "
+                    f"{responsable_nuevo}. Motivo: {motivo}."
+                ),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def listar_movimientos_custodia(evidencia_id: int) -> list[dict[str, Any]]:
+    with conectar() as conexion:
+        filas = conexion.execute(
+            """
+            SELECT
+                responsable_anterior,
+                responsable_nuevo,
+                ubicacion_anterior,
+                ubicacion_nueva,
+                estado_anterior,
+                estado_nuevo,
+                motivo,
+                creado_en
+            FROM movimientos_custodia
+            WHERE evidencia_id = ?
+            ORDER BY creado_en ASC, id ASC
+            """,
+            (evidencia_id,),
+        ).fetchall()
+    return [dict(fila) for fila in filas]
 
 
 def listar_eventos(evidencia_id: int) -> list[dict[str, Any]]:
