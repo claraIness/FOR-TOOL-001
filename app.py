@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 from database import (
+    actualizar_rol_usuario,
     crear_tablas,
     existe_numero_evidencia,
     guardar_evidencia,
@@ -20,8 +21,10 @@ from database import (
     listar_eventos,
     listar_evidencias,
     listar_movimientos_custodia,
+    listar_usuarios,
     listar_verificaciones,
     obtener_evidencia,
+    registrar_usuario,
 )
 
 
@@ -263,6 +266,14 @@ def dato_usuario(*claves: str, defecto: str = "No informado") -> str:
     return defecto
 
 
+def enmascarar_correo(email: str) -> str:
+    if "@" not in email:
+        return "correo protegido"
+    usuario, dominio = email.split("@", 1)
+    visible = usuario[:2] if len(usuario) > 1 else usuario[:1]
+    return f"{visible}***@{dominio}"
+
+
 def exigir_inicio_sesion() -> dict[str, str]:
     if not autenticacion_configurada():
         st.markdown(
@@ -296,26 +307,29 @@ def exigir_inicio_sesion() -> dict[str, str]:
             st.login("microsoft")
         st.stop()
 
-    usuario = {
+    return {
         "nombre": dato_usuario("name", "preferred_username", "email"),
         "email": dato_usuario("email", "preferred_username"),
         "id": dato_usuario("sub", "oid"),
     }
+
+
+def mostrar_sesion(usuario: dict[str, object]) -> None:
     col_usuario, col_salida = st.columns([4, 1])
     with col_usuario:
-        nombre_seguro = escape(usuario["nombre"])
-        email_seguro = escape(usuario["email"])
+        nombre_seguro = escape(str(usuario["nombre"]))
+        email_seguro = escape(enmascarar_correo(str(usuario["email"])))
+        rol_seguro = escape(str(usuario["rol"]))
         st.markdown(
             (
                 '<div class="user-session">SESION ACTIVA // '
-                f"{nombre_seguro} // {email_seguro}</div>"
+                f"{nombre_seguro} // {email_seguro} // ROL {rol_seguro}</div>"
             ),
             unsafe_allow_html=True,
         )
     with col_salida:
         if st.button("Cerrar sesion", use_container_width=True):
             st.logout()
-    return usuario
 
 
 def crear_firma_hash(
@@ -565,6 +579,7 @@ def guardar_evidencia_actual(
     archivo_tipo: str,
     archivo_tamano: int,
     hash_vigente: bool,
+    autor_usuario_id: int,
 ) -> int | None:
     if not st.session_state.hash_sha256 or st.session_state.registro == EMPTY_REGISTRY:
         st.session_state.estado_texto = "ALERTA: PRIMERO CALCULA EL HASH"
@@ -603,11 +618,67 @@ def guardar_evidencia_actual(
         archivo_tamano=archivo_tamano,
         hash_sha256=st.session_state.hash_sha256,
         registro=st.session_state.registro,
+        autor_usuario_id=autor_usuario_id,
     )
     st.session_state.ultima_evidencia_id = evidencia_id
     st.session_state.estado_texto = f"EVIDENCIA GUARDADA EN SQLITE // ID {evidencia_id}"
     st.session_state.estado_tipo = "correcto"
     return evidencia_id
+
+
+def mostrar_administracion_usuarios() -> None:
+    st.markdown(
+        '<div class="section-title">&gt; ADMINISTRACION DE USUARIOS</div>',
+        unsafe_allow_html=True,
+    )
+    usuarios = listar_usuarios()
+    st.dataframe(
+        [
+            {
+                **item,
+                "email": enmascarar_correo(item["email"]),
+            }
+            for item in usuarios
+        ],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "id": "ID",
+            "nombre": "USUARIO",
+            "email": "CORREO",
+            "rol": "ROL",
+            "creado_en": "CREADO",
+            "ultimo_acceso": "ULTIMO ACCESO",
+        },
+    )
+    opciones_usuario = {
+        f"{item['nombre']} // {enmascarar_correo(item['email'])}": item
+        for item in usuarios
+    }
+    with st.form("administrar_rol"):
+        seleccion_usuario = st.selectbox(
+            "Usuario",
+            options=list(opciones_usuario.keys()),
+        )
+        usuario_seleccionado = opciones_usuario[seleccion_usuario]
+        roles = ["ADMIN", "PERITO", "CONSULTA"]
+        rol_nuevo = st.selectbox(
+            "Rol",
+            options=roles,
+            index=roles.index(usuario_seleccionado["rol"]),
+        )
+        guardar_rol = st.form_submit_button(
+            "Actualizar rol",
+            use_container_width=True,
+        )
+    if guardar_rol:
+        try:
+            actualizar_rol_usuario(usuario_seleccionado["id"], rol_nuevo)
+        except ValueError as error:
+            st.error(str(error))
+        else:
+            st.success("Rol actualizado.")
+            st.rerun()
 
 
 def main() -> None:
@@ -625,9 +696,20 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    exigir_inicio_sesion()
+    identidad = exigir_inicio_sesion()
     crear_tablas()
+    usuario = registrar_usuario(
+        proveedor_id=identidad["id"],
+        nombre=identidad["nombre"],
+        email=identidad["email"],
+    )
+    mostrar_sesion(usuario)
     inicializar_estado()
+
+    puede_operar = usuario["rol"] in {"ADMIN", "PERITO"}
+    es_admin = usuario["rol"] == "ADMIN"
+    if not puede_operar:
+        st.info("ROL CONSULTA: acceso de solo lectura y descarga.")
 
     tab_registrar, tab_verificar, tab_historial = st.tabs(
         ["REGISTRAR", "VERIFICAR", "HISTORIAL"]
@@ -656,7 +738,11 @@ def main() -> None:
                 key=f"archivo_{st.session_state.uploader_version}",
             )
 
-            if st.button("Calcular hash", use_container_width=True):
+            if st.button(
+                "Calcular hash",
+                use_container_width=True,
+                disabled=not puede_operar,
+            ):
                 archivo_bytes = archivo.getvalue() if archivo else None
                 faltantes = campos_minimos_faltantes(evidencia, responsable, archivo_bytes)
 
@@ -769,7 +855,11 @@ def main() -> None:
             key=f"archivo_verificar_{st.session_state.uploader_version}",
         )
 
-        if st.button("Verificar integridad", use_container_width=True):
+        if st.button(
+            "Verificar integridad",
+            use_container_width=True,
+            disabled=not puede_operar,
+        ):
             if not hash_original.strip():
                 st.session_state.verificacion_texto = "ALERTA: HASH ORIGINAL PENDIENTE"
                 st.session_state.verificacion_tipo = "alerta"
@@ -800,6 +890,7 @@ def main() -> None:
                     hash_esperado=hash_original.strip(),
                     hash_obtenido=hash_nuevo,
                     resultado=resultado,
+                    autor_usuario_id=usuario["id"],
                 )
                 st.session_state.verificacion_texto += f" // REGISTRO {verificacion_id}"
 
@@ -816,7 +907,11 @@ def main() -> None:
             st.button("Limpiar formulario", use_container_width=True, on_click=limpiar_estado)
 
         with col_guardar:
-            if st.button("Guardar evidencia", use_container_width=True):
+            if st.button(
+                "Guardar evidencia",
+                use_container_width=True,
+                disabled=not puede_operar,
+            ):
                 guardar_evidencia_actual(
                     evidencia=evidencia,
                     responsable=responsable,
@@ -828,6 +923,7 @@ def main() -> None:
                     archivo_tipo=st.session_state.archivo_tipo,
                     archivo_tamano=st.session_state.archivo_tamano,
                     hash_vigente=hash_vigente,
+                    autor_usuario_id=usuario["id"],
                 )
 
         with col_pdf:
@@ -867,6 +963,7 @@ def main() -> None:
                     "archivo_nombre": "ARCHIVO",
                     "hash_sha256": "SHA256",
                     "creado_en": "REGISTRADO",
+                    "autor": "AUTOR",
                 },
             )
 
@@ -896,6 +993,7 @@ def main() -> None:
                                 f"ESTADO            : {evidencia_detalle['estado_custodia'] or 'Sin informar'}",
                                 f"RECEPCION         : {evidencia_detalle['fecha_recepcion'] or 'Sin informar'}",
                                 f"REGISTRADO        : {evidencia_detalle['creado_en']}",
+                                f"AUTOR             : {evidencia_detalle['autor']}",
                                 "</div>",
                             ]
                         ),
@@ -933,6 +1031,7 @@ def main() -> None:
                             "tipo": "TIPO",
                             "detalle": "DETALLE",
                             "creado_en": "FECHA",
+                            "autor": "AUTOR",
                         },
                     )
 
@@ -948,6 +1047,7 @@ def main() -> None:
                             "hash_obtenido": "HASH OBTENIDO",
                             "resultado": "RESULTADO",
                             "creado_en": "FECHA",
+                            "autor": "AUTOR",
                         },
                     )
 
@@ -967,6 +1067,7 @@ def main() -> None:
                             "estado_nuevo": "ESTADO NUEVO",
                             "motivo": "MOTIVO",
                             "creado_en": "FECHA",
+                            "autor": "AUTOR",
                         },
                     )
 
@@ -988,6 +1089,7 @@ def main() -> None:
                     registrar_movimiento = st.form_submit_button(
                         "Registrar movimiento",
                         use_container_width=True,
+                        disabled=not puede_operar,
                     )
 
                 if registrar_movimiento:
@@ -1006,13 +1108,18 @@ def main() -> None:
                             ubicacion_nueva=ubicacion_nueva.strip(),
                             estado_nuevo=estado_nuevo.strip(),
                             motivo=motivo.strip(),
+                            autor_usuario_id=usuario["id"],
                         )
                         st.rerun()
+
         else:
             st.markdown(
                 '<div class="terminal-box">SIN EVIDENCIAS GUARDADAS</div>',
                 unsafe_allow_html=True,
             )
+
+        if es_admin:
+            mostrar_administracion_usuarios()
 
 
 if __name__ == "__main__":
