@@ -54,3 +54,36 @@ el usuario conectado junto al boton **Cerrar sesion**.
 
 Al publicar la aplicacion, hay que registrar tambien la URI publica terminada en
 `/oauth2callback` y actualizar `redirect_uri` en los secretos del servidor.
+
+### Streamlit Community Cloud
+
+Para `https://for-tool-001.streamlit.app`, la URI debe coincidir exactamente en
+Microsoft Entra y en **App settings > Secrets** de Streamlit Cloud:
+
+```toml
+[auth]
+redirect_uri = "https://for-tool-001.streamlit.app/oauth2callback"
+cookie_secret = "UN_UNICO_SECRETO_ALEATORIO_LARGO_Y_ESTABLE"
+
+[auth.microsoft]
+client_id = "ID_DE_APLICACION_CLIENTE"
+client_secret = "VALOR_DEL_SECRETO_DE_CLIENTE"
+server_metadata_url = "https://login.microsoftonline.com/consumers/v2.0/.well-known/openid-configuration"
+```
+
+Puntos importantes:
+
+- `cookie_secret` no es el ID del cliente ni el secreto de Microsoft. Es otra
+  cadena aleatoria y debe conservarse sin cambios entre reinicios.
+- `client_secret` debe ser el **Valor** del secreto de Microsoft Entra, no su
+  identificador.
+- No agregar una barra final a la URI ni usar `http` en produccion.
+- El endpoint `consumers` corresponde a cuentas personales Microsoft. Si el
+  registro acepta solo cuentas de una organizacion, reemplazar `consumers` por
+  el ID del tenant en `server_metadata_url`.
+- Despues de guardar los secretos, reiniciar la app y borrar las cookies de
+  `for-tool-001.streamlit.app` antes de probar de nuevo.
+
+La logica de `app.py` debe llamar a `st.login("microsoft")` solo cuando
+`st.user.is_logged_in` sea falso. El flujo actual del proyecto ya cumple esta
+condicion.
