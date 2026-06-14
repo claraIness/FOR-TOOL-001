@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 forensia.db
+respaldos/
 .streamlit/secrets.toml

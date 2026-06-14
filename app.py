@@ -16,9 +16,11 @@ from database import (
     actualizar_rol_usuario,
     crear_tablas,
     existe_numero_evidencia,
+    generar_respaldo,
     guardar_evidencia,
     guardar_movimiento_custodia,
     guardar_verificacion,
+    hash_desde_manifiesto,
     listar_eventos,
     listar_evidencias,
     listar_movimientos_custodia,
@@ -26,6 +28,9 @@ from database import (
     listar_verificaciones,
     obtener_evidencia,
     registrar_usuario,
+    restaurar_respaldo,
+    validar_respaldo,
+    verificar_cadena_eventos,
 )
 
 
@@ -794,6 +799,111 @@ def mostrar_administracion_usuarios() -> None:
             st.rerun()
 
 
+def mostrar_respaldos(usuario: dict[str, object]) -> None:
+    st.markdown(
+        '<div class="section-title">&gt; RESPALDO Y RESTAURACION</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Solo administradores. El respaldo incluye evidencias, verificaciones, "
+        "custodia y usuarios. Guarda juntos el archivo SQLite y su manifiesto."
+    )
+
+    if st.button("Preparar respaldo verificable", use_container_width=True):
+        st.session_state.respaldo_preparado = generar_respaldo(
+            creado_por=str(usuario["nombre"]),
+        )
+
+    respaldo = st.session_state.get("respaldo_preparado")
+    if respaldo:
+        metadatos = respaldo["metadatos"]
+        st.success(
+            "RESPALDO VERIFICADO // "
+            f"{metadatos['tamano']} BYTES // SHA-256 {metadatos['hash_sha256']}"
+        )
+        fecha_archivo = datetime.now().strftime("%Y%m%d-%H%M%S")
+        col_base, col_manifiesto = st.columns(2)
+        with col_base:
+            st.download_button(
+                "Descargar base SQLite",
+                data=respaldo["contenido"],
+                file_name=f"FORENSIA-respaldo-{fecha_archivo}.db",
+                mime="application/vnd.sqlite3",
+                use_container_width=True,
+            )
+        with col_manifiesto:
+            st.download_button(
+                "Descargar manifiesto SHA-256",
+                data=respaldo["manifiesto"],
+                file_name=f"FORENSIA-respaldo-{fecha_archivo}.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+
+    st.markdown(
+        '<div class="section-title">&gt; RESTAURAR RESPALDO</div>',
+        unsafe_allow_html=True,
+    )
+    st.warning(
+        "La restauracion reemplaza los datos actuales. Antes de hacerlo, "
+        "FORENSIA conserva automaticamente una copia de la base vigente."
+    )
+    archivo_respaldo = st.file_uploader(
+        "Base SQLite de respaldo",
+        type=["db", "sqlite", "sqlite3"],
+        key="restaurar_base_sqlite",
+    )
+    archivo_manifiesto = st.file_uploader(
+        "Manifiesto JSON del respaldo",
+        type=["json"],
+        key="restaurar_manifiesto",
+    )
+
+    validacion = None
+    hash_esperado = ""
+    if archivo_respaldo is not None and archivo_manifiesto is not None:
+        try:
+            hash_esperado = hash_desde_manifiesto(archivo_manifiesto.getvalue())
+            validacion = validar_respaldo(
+                archivo_respaldo.getvalue(),
+                hash_esperado=hash_esperado,
+            )
+        except ValueError as error:
+            st.error(str(error))
+        else:
+            conteos = validacion["conteos"]
+            st.success(
+                "RESPALDO APTO PARA RESTAURAR // "
+                f"EVIDENCIAS {conteos['evidencias']} // "
+                f"VERIFICACIONES {conteos['verificaciones']} // "
+                f"EVENTOS {conteos['eventos']}"
+            )
+
+    confirmar = st.checkbox(
+        "Confirmo que deseo reemplazar la base actual por este respaldo.",
+        disabled=validacion is None,
+    )
+    if st.button(
+        "Restaurar base verificada",
+        use_container_width=True,
+        disabled=validacion is None or not confirmar,
+    ):
+        try:
+            resultado = restaurar_respaldo(
+                archivo_respaldo.getvalue(),
+                hash_esperado=hash_esperado,
+            )
+        except (OSError, ValueError) as error:
+            st.error(f"No se pudo restaurar el respaldo: {error}")
+        else:
+            st.session_state.pop("respaldo_preparado", None)
+            st.success(
+                "RESTAURACION COMPLETADA // "
+                f"SHA-256 {resultado['hash_sha256']}"
+            )
+            st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon=str(FAVICON_PATH), layout="wide")
     aplicar_estilos()
@@ -1143,16 +1253,52 @@ def main() -> None:
 
                 eventos = listar_eventos(evidencia_detalle["id"])
                 if eventos:
+                    auditoria = verificar_cadena_eventos(evidencia_detalle["id"])
+                    st.markdown(
+                        '<div class="section-title">&gt; AUDITORIA ENCADENADA</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if auditoria["integra"]:
+                        estado_html(
+                            f"CADENA INTEGRA // {auditoria['total_eventos']} EVENTOS // "
+                            f"ANCLA {auditoria['ultimo_hash']}",
+                            "correcto",
+                        )
+                    else:
+                        estado_html("CADENA ALTERADA O INCOMPLETA", "alerta")
+                        for error in auditoria["errores"]:
+                            st.error(error)
+
+                    eventos_tabla = [
+                        {
+                            **evento,
+                            "hash_anterior": (
+                                f"{evento['hash_anterior'][:12]}...{evento['hash_anterior'][-8:]}"
+                                if evento["hash_anterior"]
+                                else "SIN HASH"
+                            ),
+                            "hash_evento": (
+                                f"{evento['hash_evento'][:12]}...{evento['hash_evento'][-8:]}"
+                                if evento["hash_evento"]
+                                else "SIN HASH"
+                            ),
+                        }
+                        for evento in eventos
+                    ]
                     st.markdown('<div class="section-title">&gt; EVENTOS DE CUSTODIA</div>', unsafe_allow_html=True)
                     st.dataframe(
-                        eventos,
+                        eventos_tabla,
                         use_container_width=True,
                         hide_index=True,
                         column_config={
+                            "id": "ID",
                             "tipo": "TIPO",
                             "detalle": "DETALLE",
                             "creado_en": "FECHA",
                             "autor": "AUTOR",
+                            "hash_anterior": "HASH ANTERIOR",
+                            "hash_evento": "HASH EVENTO",
+                            "cadena_version": "VERSION",
                         },
                     )
 
@@ -1241,6 +1387,7 @@ def main() -> None:
 
         if es_admin:
             mostrar_administracion_usuarios()
+            mostrar_respaldos(usuario)
 
 
 if __name__ == "__main__":
