@@ -53,6 +53,12 @@ def aplicar_estilos() -> None:
             background: transparent;
         }
 
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        #MainMenu {
+            display: none !important;
+        }
+
         .block-container {
             max-width: 1120px;
             padding-top: 32px;
