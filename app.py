@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import date, datetime
@@ -32,6 +33,12 @@ APP_NAME = "FOR-TOOL-001"
 APP_SUBTITLE = "GENERADOR DE CADENA DE CUSTODIA"
 EMPTY_REGISTRY = "AUN NO SE GENERO NINGUN REGISTRO"
 FAVICON_PATH = Path(__file__).with_name("assets") / "forensia-favicon-transparent.png"
+BRAND_MARK_PATH = Path(__file__).with_name("assets") / "forensia-brand-mark.png"
+
+
+def imagen_data_uri(path: Path) -> str:
+    contenido = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{contenido}"
 
 
 def aplicar_estilos() -> None:
@@ -60,15 +67,33 @@ def aplicar_estilos() -> None:
         }
 
         .block-container {
-            max-width: 1120px;
-            padding-top: 32px;
+            max-width: 1240px;
+            padding-top: 24px;
+            padding-bottom: 56px;
         }
 
         .forensia-header {
+            display: grid;
+            grid-template-columns: 92px minmax(0, 1fr) minmax(240px, auto);
+            align-items: center;
+            gap: 22px;
             border-top: 1px solid rgba(0, 255, 136, 0.42);
             border-bottom: 1px solid rgba(0, 255, 136, 0.42);
-            padding: 22px 0 18px;
-            margin-bottom: 22px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+            background: linear-gradient(90deg, rgba(0, 240, 131, 0.08), transparent 42%), rgba(5, 5, 6, 0.72);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        }
+
+        .brand-mark {
+            width: 82px;
+            height: 82px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 14px rgba(0, 240, 131, 0.28));
+        }
+
+        .brand-copy {
+            min-width: 0;
         }
 
         .eyebrow,
@@ -92,16 +117,37 @@ def aplicar_estilos() -> None:
             text-align: right;
             font-size: 14px;
             letter-spacing: 3px;
+            line-height: 1.55;
+        }
+
+        .header-status small {
+            display: block;
+            margin-top: 7px;
+            color: #637a70;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-shadow: none;
         }
 
         .section-title {
-            margin: 22px 0 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 24px 0 14px;
             font-size: 15px;
+        }
+
+        .section-title::after {
+            content: "";
+            height: 1px;
+            flex: 1;
+            background: linear-gradient(90deg, rgba(0, 255, 136, 0.42), transparent);
         }
 
         [data-baseweb="tab-list"] {
             gap: 8px;
             border-bottom: 1px solid rgba(0, 255, 136, 0.28);
+            margin-top: 12px;
         }
 
         [data-baseweb="tab"] {
@@ -156,14 +202,23 @@ def aplicar_estilos() -> None:
         }
 
         .terminal-box {
-            padding: 18px;
+            min-height: 72px;
+            padding: 20px;
             border: 1px solid rgba(0, 255, 136, 0.42);
-            background: rgba(5, 5, 6, 0.88);
+            background: linear-gradient(135deg, rgba(0, 240, 131, 0.055), transparent 34%), rgba(5, 5, 6, 0.9);
             color: #00f083;
             white-space: pre-wrap;
             font-family: Consolas, "Courier New", monospace;
             font-size: 13px;
             line-height: 1.5;
+            box-shadow: inset 0 1px 0 rgba(0, 255, 136, 0.08);
+        }
+
+        .action-separator {
+            height: 18px;
+            margin: 4px 0 14px;
+            border-bottom: 1px solid rgba(155, 112, 255, 0.22);
+            background: linear-gradient(90deg, transparent, rgba(155, 112, 255, 0.05), transparent);
         }
 
         .auth-box {
@@ -192,8 +247,9 @@ def aplicar_estilos() -> None:
         .user-session {
             color: #00f083;
             border: 1px solid rgba(0, 255, 136, 0.36);
-            background: rgba(0, 240, 131, 0.06);
-            padding: 10px 14px;
+            border-left: 3px solid #00f083;
+            background: linear-gradient(90deg, rgba(0, 240, 131, 0.1), rgba(0, 240, 131, 0.025));
+            padding: 13px 16px;
             font-size: 12px;
             letter-spacing: 1px;
         }
@@ -216,20 +272,71 @@ def aplicar_estilos() -> None:
             color: #00f083 !important;
             background: #050506 !important;
             border: 1px solid rgba(0, 255, 136, 0.36) !important;
-            border-radius: 0 !important;
+            border-radius: 4px !important;
             font-family: Consolas, "Courier New", monospace;
+            box-shadow: inset 0 0 18px rgba(0, 240, 131, 0.035);
+        }
+
+        .stTextInput input:focus,
+        .stDateInput input:focus,
+        .stTextArea textarea:focus {
+            border-color: #00f083 !important;
+            box-shadow: 0 0 0 2px rgba(0, 240, 131, 0.12) !important;
+        }
+
+        [data-baseweb="select"] > div,
+        [data-testid="stFileUploaderDropzone"] {
+            color: #caffdf !important;
+            background: linear-gradient(135deg, rgba(16, 19, 26, 0.98), rgba(5, 5, 6, 0.98)) !important;
+            border: 1px solid rgba(155, 112, 255, 0.3) !important;
+            border-radius: 4px !important;
         }
 
         .stButton button,
         .stDownloadButton button {
             color: #00f083 !important;
-            background: rgba(0, 240, 131, 0.08) !important;
+            background: linear-gradient(180deg, rgba(0, 240, 131, 0.11), rgba(0, 240, 131, 0.045)) !important;
             border: 1px solid #00f083 !important;
-            border-radius: 0 !important;
+            border-radius: 3px !important;
             font-family: Consolas, "Courier New", monospace;
             font-weight: 700 !important;
             letter-spacing: 1.7px;
             text-transform: uppercase;
+            transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+        }
+
+        .stButton button:hover,
+        .stDownloadButton button:hover {
+            transform: translateY(-1px);
+            background: rgba(0, 240, 131, 0.15) !important;
+            box-shadow: 0 0 18px rgba(0, 255, 136, 0.2);
+        }
+
+        [data-testid="stDataFrame"] {
+            border: 1px solid rgba(155, 112, 255, 0.24);
+            box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+        }
+
+        hr {
+            border-color: rgba(0, 255, 136, 0.24) !important;
+        }
+
+        @media (max-width: 760px) {
+            .forensia-header {
+                grid-template-columns: 64px 1fr;
+                gap: 14px;
+                padding: 14px;
+            }
+
+            .brand-mark {
+                width: 58px;
+                height: 58px;
+            }
+
+            .header-status {
+                grid-column: 1 / -1;
+                text-align: left;
+            }
         }
         </style>
         """,
@@ -690,13 +797,20 @@ def mostrar_administracion_usuarios() -> None:
 def main() -> None:
     st.set_page_config(page_title=APP_NAME, page_icon=str(FAVICON_PATH), layout="wide")
     aplicar_estilos()
+    marca_uri = imagen_data_uri(BRAND_MARK_PATH)
 
     st.markdown(
         f"""
         <div class="forensia-header">
-            <div class="eyebrow">FORENSIA / HERRAMIENTA DIGITAL</div>
-            <div class="tool-id">{APP_NAME}</div>
-            <div class="header-status">{APP_SUBTITLE}</div>
+            <img class="brand-mark" src="{marca_uri}" alt="Identidad visual de FORENSIA">
+            <div class="brand-copy">
+                <div class="eyebrow">FORENSIA / HERRAMIENTA DIGITAL</div>
+                <div class="tool-id">{APP_NAME}</div>
+            </div>
+            <div class="header-status">
+                {APP_SUBTITLE}
+                <small>INTEGRIDAD DIGITAL // SHA-256 // CUSTODIA TRAZABLE</small>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -908,6 +1022,7 @@ def main() -> None:
 
 
     with tab_registrar:
+        st.markdown('<div class="action-separator"></div>', unsafe_allow_html=True)
         col_limpiar, col_guardar, col_pdf = st.columns(3)
         with col_limpiar:
             st.button("Limpiar formulario", use_container_width=True, on_click=limpiar_estado)
