@@ -113,14 +113,14 @@ def aplicar_estilos() -> None:
         }
 
         .eyebrow {
-            font-size: 18px;
+            font-size: 14px;
             line-height: 1.4;
         }
 
         .tool-id {
             color: #9b70ff;
             font-family: Consolas, "Courier New", monospace;
-            font-size: clamp(30px, 3.35vw, 42px);
+            font-size: 36px;
             font-weight: 400;
             line-height: 1;
             letter-spacing: 5px;
@@ -130,7 +130,7 @@ def aplicar_estilos() -> None:
 
         .header-status {
             text-align: right;
-            font-size: 16px;
+            font-size: 14px;
             letter-spacing: 3px;
             line-height: 1.55;
         }
@@ -139,7 +139,7 @@ def aplicar_estilos() -> None:
             display: block;
             margin-top: 7px;
             color: #637a70;
-            font-size: 11px;
+            font-size: 10px;
             letter-spacing: 1.5px;
             text-shadow: none;
         }
