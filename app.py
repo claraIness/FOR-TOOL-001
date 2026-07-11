@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import textwrap
 from datetime import date, datetime
 from html import escape
 from io import BytesIO
@@ -82,6 +83,7 @@ def aplicar_estilos() -> None:
             grid-template-columns: 92px minmax(0, 1fr) minmax(240px, auto);
             align-items: center;
             gap: 22px;
+            font-family: Consolas, "Courier New", monospace;
             border-top: 1px solid rgba(0, 255, 136, 0.42);
             border-bottom: 1px solid rgba(0, 255, 136, 0.42);
             padding: 16px 20px;
@@ -110,9 +112,17 @@ def aplicar_estilos() -> None:
             text-shadow: 0 0 10px rgba(0, 240, 131, 0.34);
         }
 
+        .eyebrow {
+            font-size: 18px;
+            line-height: 1.4;
+        }
+
         .tool-id {
             color: #9b70ff;
-            font-size: clamp(22px, 3vw, 34px);
+            font-family: Consolas, "Courier New", monospace;
+            font-size: clamp(30px, 3.35vw, 42px);
+            font-weight: 400;
+            line-height: 1;
             letter-spacing: 5px;
             text-shadow: 0 0 18px rgba(155, 112, 255, 0.72);
             margin: 8px 0 0;
@@ -120,7 +130,7 @@ def aplicar_estilos() -> None:
 
         .header-status {
             text-align: right;
-            font-size: 14px;
+            font-size: 16px;
             letter-spacing: 3px;
             line-height: 1.55;
         }
@@ -129,7 +139,7 @@ def aplicar_estilos() -> None:
             display: block;
             margin-top: 7px;
             color: #637a70;
-            font-size: 10px;
+            font-size: 11px;
             letter-spacing: 1.5px;
             text-shadow: none;
         }
@@ -624,6 +634,211 @@ def generar_pdf(registro: str) -> bytes:
                 y = height - 42
             pdf.drawString(x, y, parte)
             y -= line_height
+
+    pdf.save()
+    return buffer.getvalue()
+
+
+def armar_informe_forense(
+    *,
+    evidencia: dict[str, object],
+    eventos: list[dict[str, object]],
+    verificaciones: list[dict[str, object]],
+    movimientos: list[dict[str, object]],
+    auditoria: dict[str, object],
+    exportado_por: str,
+    generado_en: datetime | None = None,
+) -> list[tuple[str, str]]:
+    momento = generado_en or datetime.now()
+    secciones: list[tuple[str, str]] = [
+        ("titulo", "INFORME FORENSE DE CADENA DE CUSTODIA"),
+        ("meta", f"Herramienta: {APP_NAME}"),
+        ("meta", f"Generado: {momento.strftime('%d/%m/%Y %H:%M:%S')}"),
+        ("meta", f"Exportado por: {exportado_por}"),
+        ("seccion", "IDENTIFICACION DE LA EVIDENCIA"),
+        ("texto", f"ID interno: {evidencia['id']}"),
+        ("texto", f"Numero de evidencia: {evidencia['numero_evidencia']}"),
+        ("texto", f"Responsable actual: {evidencia['responsable']}"),
+        ("texto", f"Ubicacion actual: {evidencia.get('ubicacion') or 'Sin informar'}"),
+        ("texto", f"Estado actual: {evidencia.get('estado_custodia') or 'Sin informar'}"),
+        ("texto", f"Fecha de recepcion: {evidencia.get('fecha_recepcion') or 'Sin informar'}"),
+        ("texto", f"Descripcion: {evidencia.get('descripcion') or 'Sin informar'}"),
+        ("texto", f"Registrado: {evidencia['creado_en']}"),
+        ("texto", f"Autor del registro: {evidencia['autor']}"),
+        ("seccion", "EVIDENCIA DIGITAL E INTEGRIDAD"),
+        ("texto", f"Archivo: {evidencia['archivo_nombre']}"),
+        ("texto", f"Tipo: {evidencia.get('archivo_tipo') or 'No informado'}"),
+        ("texto", f"Tamano: {evidencia.get('archivo_tamano') or 0} bytes"),
+        ("hash", f"SHA-256: {evidencia['hash_sha256']}"),
+        ("seccion", "AUDITORIA ENCADENADA"),
+        (
+            "correcto" if auditoria["integra"] else "alerta",
+            "CADENA INTEGRA" if auditoria["integra"] else "CADENA ALTERADA O INCOMPLETA",
+        ),
+        ("texto", f"Eventos registrados: {auditoria['total_eventos']}"),
+        ("hash", f"Hash final de cadena: {auditoria['ultimo_hash'] or 'Sin eventos'}"),
+    ]
+
+    for error in auditoria["errores"]:
+        secciones.append(("alerta", f"Alerta: {error}"))
+
+    secciones.append(("seccion", "EVENTOS DE AUDITORIA"))
+    if eventos:
+        for evento in eventos:
+            secciones.extend(
+                [
+                    (
+                        "subtitulo",
+                        f"Evento {evento['id']} // {evento['tipo']} // {evento['creado_en']}",
+                    ),
+                    ("texto", f"Autor: {evento['autor']}"),
+                    ("texto", f"Detalle: {evento['detalle']}"),
+                    ("hash", f"Hash anterior: {evento['hash_anterior']}"),
+                    ("hash", f"Hash del evento: {evento['hash_evento']}"),
+                ]
+            )
+    else:
+        secciones.append(("texto", "Sin eventos registrados."))
+
+    secciones.append(("seccion", "VERIFICACIONES DE INTEGRIDAD"))
+    if verificaciones:
+        for indice, verificacion in enumerate(verificaciones, start=1):
+            secciones.extend(
+                [
+                    (
+                        "subtitulo",
+                        f"Verificacion {indice} // {verificacion['creado_en']} // {verificacion['resultado']}",
+                    ),
+                    ("texto", f"Autor: {verificacion['autor']}"),
+                    ("hash", f"Hash esperado: {verificacion['hash_esperado']}"),
+                    ("hash", f"Hash obtenido: {verificacion['hash_obtenido']}"),
+                ]
+            )
+    else:
+        secciones.append(("texto", "Sin verificaciones registradas."))
+
+    secciones.append(("seccion", "HISTORIAL DE CUSTODIA"))
+    if movimientos:
+        for indice, movimiento in enumerate(movimientos, start=1):
+            secciones.extend(
+                [
+                    ("subtitulo", f"Movimiento {indice} // {movimiento['creado_en']}"),
+                    ("texto", f"Autor: {movimiento['autor']}"),
+                    (
+                        "texto",
+                        f"Responsable: {movimiento['responsable_anterior']} -> {movimiento['responsable_nuevo']}",
+                    ),
+                    (
+                        "texto",
+                        f"Ubicacion: {movimiento['ubicacion_anterior'] or 'Sin informar'} -> "
+                        f"{movimiento['ubicacion_nueva'] or 'Sin informar'}",
+                    ),
+                    (
+                        "texto",
+                        f"Estado: {movimiento['estado_anterior'] or 'Sin informar'} -> "
+                        f"{movimiento['estado_nuevo'] or 'Sin informar'}",
+                    ),
+                    ("texto", f"Motivo: {movimiento['motivo']}"),
+                ]
+            )
+    else:
+        secciones.append(("texto", "Sin movimientos de custodia registrados."))
+
+    secciones.extend(
+        [
+            ("seccion", "CIERRE DEL INFORME"),
+            (
+                "texto",
+                "Este documento resume los registros almacenados por FORENSIA. "
+                "La validez de la evidencia digital depende de conservar el archivo original, "
+                "la base de datos y sus respaldos verificables.",
+            ),
+        ]
+    )
+    return secciones
+
+
+def generar_pdf_forense(
+    *,
+    evidencia: dict[str, object],
+    eventos: list[dict[str, object]],
+    verificaciones: list[dict[str, object]],
+    movimientos: list[dict[str, object]],
+    auditoria: dict[str, object],
+    exportado_por: str,
+) -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    ancho, alto = A4
+    margen_x = 42
+    margen_inferior = 48
+    numero_pagina = 0
+    y = 0.0
+
+    def nueva_pagina() -> None:
+        nonlocal numero_pagina, y
+        if numero_pagina:
+            pdf.showPage()
+        numero_pagina += 1
+        pdf.setFillColorRGB(0.0, 0.45, 0.25)
+        pdf.rect(0, alto - 54, ancho, 54, fill=1, stroke=0)
+        if BRAND_MARK_PATH.exists():
+            pdf.drawImage(
+                str(BRAND_MARK_PATH),
+                margen_x,
+                alto - 48,
+                width=34,
+                height=34,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+        pdf.setFillColorRGB(0.85, 1.0, 0.91)
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(margen_x + 44, alto - 32, "FORENSIA // FOR-TOOL-001")
+        pdf.setFont("Helvetica", 8)
+        pdf.drawRightString(ancho - margen_x, alto - 32, "CADENA DE CUSTODIA DIGITAL")
+        pdf.setFillColorRGB(0.25, 0.25, 0.3)
+        pdf.drawString(margen_x, 24, f"Informe generado por {APP_NAME}")
+        pdf.drawRightString(ancho - margen_x, 24, f"Pagina {numero_pagina}")
+        y = alto - 78
+
+    nueva_pagina()
+    estilos = {
+        "titulo": ("Helvetica-Bold", 16, (0.36, 0.17, 0.72), 24, 58),
+        "seccion": ("Helvetica-Bold", 11, (0.0, 0.42, 0.23), 18, 72),
+        "subtitulo": ("Helvetica-Bold", 9, (0.18, 0.18, 0.22), 15, 84),
+        "meta": ("Helvetica", 8, (0.35, 0.35, 0.4), 12, 94),
+        "texto": ("Helvetica", 8.5, (0.12, 0.12, 0.15), 12, 94),
+        "hash": ("Courier", 7.3, (0.08, 0.26, 0.16), 10, 76),
+        "correcto": ("Helvetica-Bold", 10, (0.0, 0.48, 0.25), 16, 84),
+        "alerta": ("Helvetica-Bold", 10, (0.75, 0.12, 0.16), 16, 84),
+    }
+
+    for tipo, texto in armar_informe_forense(
+        evidencia=evidencia,
+        eventos=eventos,
+        verificaciones=verificaciones,
+        movimientos=movimientos,
+        auditoria=auditoria,
+        exportado_por=exportado_por,
+    ):
+        fuente, tamano, color, salto, ancho_linea = estilos[tipo]
+        lineas = textwrap.wrap(
+            str(texto),
+            width=ancho_linea,
+            replace_whitespace=False,
+            break_long_words=True,
+            break_on_hyphens=False,
+        ) or [""]
+        espacio_necesario = salto + (len(lineas) - 1) * (tamano + 3)
+        if y - espacio_necesario < margen_inferior:
+            nueva_pagina()
+        pdf.setFont(fuente, tamano)
+        pdf.setFillColorRGB(*color)
+        for linea in lineas:
+            pdf.drawString(margen_x, y, linea)
+            y -= tamano + 3
+        y -= max(3, salto - len(lineas) * (tamano + 3))
 
     pdf.save()
     return buffer.getvalue()
@@ -1252,23 +1467,23 @@ def main() -> None:
                 )
 
                 eventos = listar_eventos(evidencia_detalle["id"])
-                if eventos:
-                    auditoria = verificar_cadena_eventos(evidencia_detalle["id"])
-                    st.markdown(
-                        '<div class="section-title">&gt; AUDITORIA ENCADENADA</div>',
-                        unsafe_allow_html=True,
+                auditoria = verificar_cadena_eventos(evidencia_detalle["id"])
+                st.markdown(
+                    '<div class="section-title">&gt; AUDITORIA ENCADENADA</div>',
+                    unsafe_allow_html=True,
+                )
+                if auditoria["integra"]:
+                    estado_html(
+                        f"CADENA INTEGRA // {auditoria['total_eventos']} EVENTOS // "
+                        f"ANCLA {auditoria['ultimo_hash']}",
+                        "correcto",
                     )
-                    if auditoria["integra"]:
-                        estado_html(
-                            f"CADENA INTEGRA // {auditoria['total_eventos']} EVENTOS // "
-                            f"ANCLA {auditoria['ultimo_hash']}",
-                            "correcto",
-                        )
-                    else:
-                        estado_html("CADENA ALTERADA O INCOMPLETA", "alerta")
-                        for error in auditoria["errores"]:
-                            st.error(error)
+                else:
+                    estado_html("CADENA ALTERADA O INCOMPLETA", "alerta")
+                    for error in auditoria["errores"]:
+                        st.error(error)
 
+                if eventos:
                     eventos_tabla = [
                         {
                             **evento,
@@ -1337,6 +1552,29 @@ def main() -> None:
                             "autor": "AUTOR",
                         },
                     )
+
+                st.markdown(
+                    '<div class="section-title">&gt; INFORME FORENSE</div>',
+                    unsafe_allow_html=True,
+                )
+                nombre_evidencia = "".join(
+                    caracter if caracter.isalnum() or caracter in "-_" else "-"
+                    for caracter in str(evidencia_detalle["numero_evidencia"])
+                ).strip("-") or "evidencia"
+                st.download_button(
+                    "Descargar informe forense completo",
+                    data=generar_pdf_forense(
+                        evidencia=evidencia_detalle,
+                        eventos=eventos,
+                        verificaciones=verificaciones,
+                        movimientos=movimientos,
+                        auditoria=auditoria,
+                        exportado_por=str(usuario["nombre"]),
+                    ),
+                    file_name=f"FORENSIA-{nombre_evidencia}-informe-forense.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
 
                 st.markdown('<div class="section-title">&gt; REGISTRAR MOVIMIENTO DE CUSTODIA</div>', unsafe_allow_html=True)
                 with st.form(f"custodia_{evidencia_detalle['id']}"):
